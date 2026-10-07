@@ -1,0 +1,143 @@
+{
+  "start": "intro_01",
+  "nodes": [
+    {
+      "id": "intro_01",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "...Why are we still here?",
+      "next": "intro_02"
+    },
+    {
+      "id": "intro_02",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "Because Valentine told us to clean the classroom.",
+      "next": "intro_03"
+    },
+    {
+      "id": "intro_03",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "She also said, \"I'll be back in five minutes.\"",
+      "next": "intro_04"
+    },
+    {
+      "id": "intro_04",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "Yes.",
+      "next": "intro_05"
+    },
+    {
+      "id": "intro_05",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "That was thirty minutes ago.",
+      "next": "intro_06"
+    },
+    {
+      "id": "intro_06",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "Are you going to complain, or are you going to move those chairs?",
+      "next": "intro_07"
+    },
+    {
+      "id": "intro_07",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "Important question. What happens if I choose complaining?",
+      "next": "classroom_choice"
+    },
+    {
+      "id": "classroom_choice",
+      "type": "choice",
+      "options": [
+        {
+          "text": "Fine. I'll help.",
+          "target": "help_01"
+        },
+        {
+          "text": "I think moral support is enough.",
+          "target": "support_01"
+        }
+      ]
+    },
+    {
+      "id": "help_01",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "Fine. I'll help. But I want it officially recorded that I did so unwillingly.",
+      "next": "help_02"
+    },
+    {
+      "id": "help_02",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "faint_smile",
+      "text": "Your sacrifice will be remembered.",
+      "next": "shared_01"
+    },
+    {
+      "id": "support_01",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "I think my role here should be moral support.",
+      "next": "support_02"
+    },
+    {
+      "id": "support_02",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "Then morally support that chair into the corner.",
+      "next": "shared_01"
+    },
+    {
+      "id": "shared_01",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "You know, you're surprisingly difficult to argue with.",
+      "next": "shared_02"
+    },
+    {
+      "id": "shared_02",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "Pick up the chair, Jukain.",
+      "next": "shared_03"
+    },
+    {
+      "id": "shared_03",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "See? Completely unreasonable.",
+      "next": "shared_04"
+    },
+    {
+      "id": "shared_04",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "faint_smile",
+      "text": "Move.",
+      "next": "scene_end"
+    },
+    {
+      "id": "scene_end",
+      "type": "end"
+    }
+  ]
+}

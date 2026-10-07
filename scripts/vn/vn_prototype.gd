@@ -1,38 +1,6 @@
 extends Control
 
-enum DialogueState {
-	INTRO,
-	BRANCH,
-	SHARED_ENDING,
-	ENDED,
-}
-
-const INTRO_LINES := [
-	{"speaker": "Jukain", "expression": "tired", "text": "...Why are we still here?"},
-	{"speaker": "Hiruko", "expression": "neutral", "text": "Because Valentine told us to clean the classroom."},
-	{"speaker": "Jukain", "expression": "tired", "text": "She also said, \"I'll be back in five minutes.\""},
-	{"speaker": "Hiruko", "expression": "neutral", "text": "Yes."},
-	{"speaker": "Jukain", "expression": "smirk", "text": "That was thirty minutes ago."},
-	{"speaker": "Hiruko", "expression": "annoyed", "text": "Are you going to complain, or are you going to move those chairs?"},
-	{"speaker": "Jukain", "expression": "smirk", "text": "Important question. What happens if I choose complaining?"},
-]
-
-const OPTION_A_LINES := [
-	{"speaker": "Jukain", "expression": "tired", "text": "Fine. I'll help. But I want it officially recorded that I did so unwillingly."},
-	{"speaker": "Hiruko", "expression": "faint_smile", "text": "Your sacrifice will be remembered."},
-]
-
-const OPTION_B_LINES := [
-	{"speaker": "Jukain", "expression": "smirk", "text": "I think my role here should be moral support."},
-	{"speaker": "Hiruko", "expression": "annoyed", "text": "Then morally support that chair into the corner."},
-]
-
-const SHARED_ENDING_LINES := [
-	{"speaker": "Jukain", "expression": "tired", "text": "You know, you're surprisingly difficult to argue with."},
-	{"speaker": "Hiruko", "expression": "neutral", "text": "Pick up the chair, Jukain."},
-	{"speaker": "Jukain", "expression": "smirk", "text": "See? Completely unreasonable."},
-	{"speaker": "Hiruko", "expression": "faint_smile", "text": "Move."},
-]
+const DIALOGUE_PATH := "res://data/dialogue/vn_prototype_m1.json"
 
 const CHARACTER_TEXTURES := {
 	"Jukain": {
@@ -60,21 +28,28 @@ const CHARACTER_TEXTURES := {
 @onready var end_content: VBoxContainer = %EndContent
 @onready var restart_button: Button = %RestartButton
 
-var dialogue_state := DialogueState.INTRO
-var line_index := 0
-var branch_lines: Array = []
+var dialogue_nodes: Dictionary = {}
+var start_node_id := ""
+var current_node_id := ""
 var awaiting_choice := false
+var scene_ended := false
+var dialogue_ready := false
 
 
 func _ready() -> void:
-	option_a_button.pressed.connect(_on_option_selected.bind(OPTION_A_LINES))
-	option_b_button.pressed.connect(_on_option_selected.bind(OPTION_B_LINES))
+	option_a_button.pressed.connect(_on_option_selected.bind(0))
+	option_b_button.pressed.connect(_on_option_selected.bind(1))
 	restart_button.pressed.connect(_restart_scene)
-	_reset_prototype()
+
+	dialogue_ready = _load_dialogue_data()
+	if dialogue_ready:
+		_reset_prototype()
+	else:
+		_show_dialogue_error()
 
 
 func _input(event: InputEvent) -> void:
-	if dialogue_state == DialogueState.ENDED or awaiting_choice:
+	if not dialogue_ready or scene_ended or awaiting_choice:
 		return
 
 	var requested_advance := false
@@ -88,11 +63,157 @@ func _input(event: InputEvent) -> void:
 		_advance_dialogue()
 
 
-func _reset_prototype() -> void:
-	dialogue_state = DialogueState.INTRO
-	line_index = 0
-	branch_lines = []
+func _load_dialogue_data() -> bool:
+	var file := FileAccess.open(DIALOGUE_PATH, FileAccess.READ)
+	if file == null:
+		return _report_dialogue_error(
+			"Could not open %s: %s" % [DIALOGUE_PATH, error_string(FileAccess.get_open_error())]
+		)
+
+	var json := JSON.new()
+	var parse_error := json.parse(file.get_as_text())
+	if parse_error != OK:
+		return _report_dialogue_error(
+			"Malformed JSON in %s at line %d: %s"
+			% [DIALOGUE_PATH, json.get_error_line(), json.get_error_message()]
+		)
+
+	if typeof(json.data) != TYPE_DICTIONARY:
+		return _report_dialogue_error("Dialogue root must be an object in %s." % DIALOGUE_PATH)
+
+	return _validate_and_index_dialogue(json.data)
+
+
+func _validate_and_index_dialogue(data: Dictionary) -> bool:
+	dialogue_nodes.clear()
+	start_node_id = _required_string(data, "start")
+	if start_node_id.is_empty():
+		return false
+
+	var raw_nodes: Variant = data.get("nodes", [])
+	if typeof(raw_nodes) != TYPE_ARRAY or raw_nodes.is_empty():
+		return _report_dialogue_error("Dialogue data requires a non-empty 'nodes' array.")
+
+	for raw_node: Variant in raw_nodes:
+		if typeof(raw_node) != TYPE_DICTIONARY:
+			return _report_dialogue_error("Every dialogue node must be an object.")
+
+		var node: Dictionary = raw_node
+		var node_id := _required_string(node, "id")
+		var node_type := _required_string(node, "type")
+		if node_id.is_empty() or node_type.is_empty():
+			return false
+		if dialogue_nodes.has(node_id):
+			return _report_dialogue_error("Duplicate dialogue node ID '%s'." % node_id)
+
+		match node_type:
+			"line":
+				if not _validate_line_node(node, node_id):
+					return false
+			"choice":
+				if not _validate_choice_node(node, node_id):
+					return false
+			"end":
+				pass
+			_:
+				return _report_dialogue_error(
+					"Node '%s' has unsupported type '%s'." % [node_id, node_type]
+				)
+
+		dialogue_nodes[node_id] = node
+
+	if not dialogue_nodes.has(start_node_id):
+		return _report_dialogue_error("Start node '%s' does not exist." % start_node_id)
+
+	for node_id: String in dialogue_nodes:
+		var node: Dictionary = dialogue_nodes[node_id]
+		if node["type"] == "line":
+			if not dialogue_nodes.has(node["next"]):
+				return _report_dialogue_error(
+					"Line node '%s' targets missing node '%s'." % [node_id, node["next"]]
+				)
+		elif node["type"] == "choice":
+			for option: Dictionary in node["options"]:
+				if not dialogue_nodes.has(option["target"]):
+					return _report_dialogue_error(
+						"Choice node '%s' targets missing branch '%s'."
+						% [node_id, option["target"]]
+					)
+
+	return true
+
+
+func _validate_line_node(node: Dictionary, node_id: String) -> bool:
+	var speaker := _required_string(node, "speaker", node_id)
+	var text := _required_string(node, "text", node_id)
+	var expression := _required_string(node, "expression", node_id)
+	var next_node := _required_string(node, "next", node_id)
+	if speaker.is_empty() or text.is_empty() or expression.is_empty() or next_node.is_empty():
+		return false
+
+	if not CHARACTER_TEXTURES.has(speaker):
+		return _report_dialogue_error("Line node '%s' has unknown speaker '%s'." % [node_id, speaker])
+	var speaker_textures: Dictionary = CHARACTER_TEXTURES[speaker]
+	if not speaker_textures.has(expression):
+		return _report_dialogue_error(
+			"Line node '%s' has invalid expression '%s' for %s."
+			% [node_id, expression, speaker]
+		)
+
+	return true
+
+
+func _validate_choice_node(node: Dictionary, node_id: String) -> bool:
+	var options: Variant = node.get("options", [])
+	if typeof(options) != TYPE_ARRAY or options.size() != 2:
+		return _report_dialogue_error(
+			"Choice node '%s' must contain exactly two options for the existing UI." % node_id
+		)
+
+	for option_index in options.size():
+		var raw_option: Variant = options[option_index]
+		if typeof(raw_option) != TYPE_DICTIONARY:
+			return _report_dialogue_error(
+				"Option %d in choice node '%s' must be an object." % [option_index, node_id]
+			)
+		var option: Dictionary = raw_option
+		if _required_string(option, "text", "%s option %d" % [node_id, option_index]).is_empty():
+			return false
+		if _required_string(option, "target", "%s option %d" % [node_id, option_index]).is_empty():
+			return false
+
+	return true
+
+
+func _required_string(data: Dictionary, field: String, context := "dialogue root") -> String:
+	if not data.has(field) or typeof(data[field]) != TYPE_STRING or data[field].is_empty():
+		_report_dialogue_error("Missing or invalid '%s' in %s." % [field, context])
+		return ""
+	return data[field]
+
+
+func _report_dialogue_error(message: String) -> bool:
+	push_error("VN dialogue error: %s" % message)
+	return false
+
+
+func _show_dialogue_error() -> void:
 	awaiting_choice = false
+	scene_ended = false
+	choice_panel.hide()
+	end_background.hide()
+	end_content.hide()
+	story_background.show()
+	character_layer.show()
+	dialogue_panel.show()
+	speaker_name.text = "Dialogue Error"
+	dialogue_text.text = "The scene data could not be loaded. Check the Godot debugger for details."
+
+
+func _reset_prototype() -> void:
+	current_node_id = ""
+	awaiting_choice = false
+	scene_ended = false
 
 	story_background.show()
 	character_layer.show()
@@ -103,31 +224,31 @@ func _reset_prototype() -> void:
 
 	jukain_sprite.texture = CHARACTER_TEXTURES["Jukain"]["tired"]
 	hiruko_sprite.texture = CHARACTER_TEXTURES["Hiruko"]["neutral"]
-	_show_line(INTRO_LINES[line_index])
+	_show_node(start_node_id)
 
 
 func _advance_dialogue() -> void:
-	match dialogue_state:
-		DialogueState.INTRO:
-			if line_index < INTRO_LINES.size() - 1:
-				line_index += 1
-				_show_line(INTRO_LINES[line_index])
-			else:
-				_show_choices()
-		DialogueState.BRANCH:
-			if line_index < branch_lines.size() - 1:
-				line_index += 1
-				_show_line(branch_lines[line_index])
-			else:
-				dialogue_state = DialogueState.SHARED_ENDING
-				line_index = 0
-				_show_line(SHARED_ENDING_LINES[line_index])
-		DialogueState.SHARED_ENDING:
-			if line_index < SHARED_ENDING_LINES.size() - 1:
-				line_index += 1
-				_show_line(SHARED_ENDING_LINES[line_index])
-			else:
-				_finish_scene()
+	var current_node: Dictionary = dialogue_nodes.get(current_node_id, {})
+	if current_node.get("type", "") != "line":
+		_report_runtime_error("Cannot advance from node '%s'." % current_node_id)
+		return
+	_show_node(current_node["next"])
+
+
+func _show_node(node_id: String) -> void:
+	if not dialogue_nodes.has(node_id):
+		_report_runtime_error("Tried to show missing node '%s'." % node_id)
+		return
+
+	current_node_id = node_id
+	var node: Dictionary = dialogue_nodes[node_id]
+	match node["type"]:
+		"line":
+			_show_line(node)
+		"choice":
+			_show_choices(node)
+		"end":
+			_finish_scene()
 
 
 func _show_line(line: Dictionary) -> void:
@@ -146,26 +267,38 @@ func _show_line(line: Dictionary) -> void:
 		jukain_sprite.modulate = Color(0.58, 0.58, 0.64, 0.82)
 
 
-func _show_choices() -> void:
+func _show_choices(choice: Dictionary) -> void:
+	var options: Array = choice["options"]
+	option_a_button.text = options[0]["text"]
+	option_b_button.text = options[1]["text"]
 	awaiting_choice = true
 	choice_panel.show()
 	option_a_button.grab_focus()
 
 
-func _on_option_selected(selected_branch: Array) -> void:
+func _on_option_selected(option_index: int) -> void:
 	if not awaiting_choice:
+		return
+
+	var choice: Dictionary = dialogue_nodes.get(current_node_id, {})
+	var options: Array = choice.get("options", [])
+	if choice.get("type", "") != "choice" or option_index >= options.size():
+		_report_runtime_error("Current choice data is invalid at node '%s'." % current_node_id)
 		return
 
 	awaiting_choice = false
 	choice_panel.hide()
-	branch_lines = selected_branch
-	dialogue_state = DialogueState.BRANCH
-	line_index = 0
-	_show_line(branch_lines[line_index])
+	_show_node(options[option_index]["target"])
+
+
+func _report_runtime_error(message: String) -> void:
+	dialogue_ready = false
+	_report_dialogue_error(message)
+	_show_dialogue_error()
 
 
 func _finish_scene() -> void:
-	dialogue_state = DialogueState.ENDED
+	scene_ended = true
 	awaiting_choice = false
 	choice_panel.hide()
 	dialogue_panel.hide()
