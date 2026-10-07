@@ -63,11 +63,30 @@
       "options": [
         {
           "text": "Fine. I'll help.",
-          "target": "help_01"
+          "target": "help_01",
+          "effects": [
+            {
+              "type": "set_flag",
+              "flag": "helped_hiruko",
+              "value": true
+            },
+            {
+              "type": "adjust_bond",
+              "bond": "hiruko",
+              "amount": 1
+            }
+          ]
         },
         {
           "text": "I think moral support is enough.",
-          "target": "support_01"
+          "target": "support_01",
+          "effects": [
+            {
+              "type": "set_flag",
+              "flag": "helped_hiruko",
+              "value": false
+            }
+          ]
         }
       ]
     },
@@ -85,7 +104,7 @@
       "speaker": "Hiruko",
       "expression": "faint_smile",
       "text": "Your sacrifice will be remembered.",
-      "next": "shared_01"
+      "next": "helped_hiruko_condition"
     },
     {
       "id": "support_01",
@@ -101,6 +120,33 @@
       "speaker": "Hiruko",
       "expression": "annoyed",
       "text": "Then morally support that chair into the corner.",
+      "next": "helped_hiruko_condition"
+    },
+    {
+      "id": "helped_hiruko_condition",
+      "type": "condition",
+      "condition": {
+        "type": "flag_equals",
+        "flag": "helped_hiruko",
+        "value": true
+      },
+      "true_target": "helped_reaction",
+      "false_target": "not_helped_reaction"
+    },
+    {
+      "id": "helped_reaction",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "faint_smile",
+      "text": "At least you decided to help.",
+      "next": "shared_01"
+    },
+    {
+      "id": "not_helped_reaction",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "Moral support still doesn't move chairs.",
       "next": "shared_01"
     },
     {

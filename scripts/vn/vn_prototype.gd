@@ -113,6 +113,9 @@ func _validate_and_index_dialogue(data: Dictionary) -> bool:
 			"choice":
 				if not _validate_choice_node(node, node_id):
 					return false
+			"condition":
+				if not _validate_condition_node(node, node_id):
+					return false
 			"end":
 				pass
 			_:
@@ -138,6 +141,13 @@ func _validate_and_index_dialogue(data: Dictionary) -> bool:
 					return _report_dialogue_error(
 						"Choice node '%s' targets missing branch '%s'."
 						% [node_id, option["target"]]
+					)
+		elif node["type"] == "condition":
+			for target_field in ["true_target", "false_target"]:
+				if not dialogue_nodes.has(node[target_field]):
+					return _report_dialogue_error(
+						"Condition node '%s' has missing %s '%s'."
+						% [node_id, target_field, node[target_field]]
 					)
 
 	return true
@@ -181,8 +191,93 @@ func _validate_choice_node(node: Dictionary, node_id: String) -> bool:
 			return false
 		if _required_string(option, "target", "%s option %d" % [node_id, option_index]).is_empty():
 			return false
+		if not _validate_effects(option, "%s option %d" % [node_id, option_index]):
+			return false
 
 	return true
+
+
+func _validate_effects(option: Dictionary, context: String) -> bool:
+	var effects: Variant = option.get("effects", [])
+	if typeof(effects) != TYPE_ARRAY:
+		return _report_dialogue_error("The 'effects' field in %s must be an array." % context)
+
+	for effect_index in effects.size():
+		var raw_effect: Variant = effects[effect_index]
+		var effect_context := "%s effect %d" % [context, effect_index]
+		if typeof(raw_effect) != TYPE_DICTIONARY:
+			return _report_dialogue_error("%s must be an object." % effect_context)
+
+		var effect: Dictionary = raw_effect
+		var effect_type := _required_string(effect, "type", effect_context)
+		if effect_type.is_empty():
+			return false
+
+		match effect_type:
+			"set_flag":
+				if not _has_only_fields(effect, ["type", "flag", "value"], effect_context):
+					return false
+				if _required_string(effect, "flag", effect_context).is_empty():
+					return false
+				if not effect.has("value") or typeof(effect["value"]) != TYPE_BOOL:
+					return _report_dialogue_error(
+						"Missing or invalid boolean 'value' in %s." % effect_context
+					)
+			"adjust_bond":
+				if not _has_only_fields(effect, ["type", "bond", "amount"], effect_context):
+					return false
+				if _required_string(effect, "bond", effect_context).is_empty():
+					return false
+				if not _is_integer_value(effect.get("amount")):
+					return _report_dialogue_error(
+						"Missing or invalid integer 'amount' in %s." % effect_context
+					)
+			_:
+				return _report_dialogue_error(
+					"Unknown effect type '%s' in %s." % [effect_type, effect_context]
+				)
+
+	return true
+
+
+func _validate_condition_node(node: Dictionary, node_id: String) -> bool:
+	var raw_condition: Variant = node.get("condition")
+	if typeof(raw_condition) != TYPE_DICTIONARY:
+		return _report_dialogue_error("Condition node '%s' requires a condition object." % node_id)
+
+	var condition: Dictionary = raw_condition
+	if not _has_only_fields(condition, ["type", "flag", "value"], "condition node '%s'" % node_id):
+		return false
+	var condition_type := _required_string(condition, "type", "condition node '%s'" % node_id)
+	if condition_type != "flag_equals":
+		return _report_dialogue_error(
+			"Unknown condition type '%s' in node '%s'." % [condition_type, node_id]
+		)
+	if _required_string(condition, "flag", "condition node '%s'" % node_id).is_empty():
+		return false
+	if not condition.has("value") or typeof(condition["value"]) != TYPE_BOOL:
+		return _report_dialogue_error(
+			"Condition node '%s' requires a boolean 'value'." % node_id
+		)
+	if _required_string(node, "true_target", node_id).is_empty():
+		return false
+	if _required_string(node, "false_target", node_id).is_empty():
+		return false
+
+	return true
+
+
+func _has_only_fields(data: Dictionary, allowed_fields: Array, context: String) -> bool:
+	for field: Variant in data:
+		if not allowed_fields.has(field):
+			return _report_dialogue_error("Unknown field '%s' in %s." % [field, context])
+	return true
+
+
+func _is_integer_value(value: Variant) -> bool:
+	if typeof(value) == TYPE_INT:
+		return true
+	return typeof(value) == TYPE_FLOAT and value == floor(value)
 
 
 func _required_string(data: Dictionary, field: String, context := "dialogue root") -> String:
@@ -247,6 +342,8 @@ func _show_node(node_id: String) -> void:
 			_show_line(node)
 		"choice":
 			_show_choices(node)
+		"condition":
+			_show_condition(node)
 		"end":
 			_finish_scene()
 
@@ -288,7 +385,34 @@ func _on_option_selected(option_index: int) -> void:
 
 	awaiting_choice = false
 	choice_panel.hide()
-	_show_node(options[option_index]["target"])
+	var selected_option: Dictionary = options[option_index]
+	if not _apply_choice_effects(selected_option):
+		return
+	_show_node(selected_option["target"])
+
+
+func _apply_choice_effects(option: Dictionary) -> bool:
+	for effect: Dictionary in option.get("effects", []):
+		match effect["type"]:
+			"set_flag":
+				GameState.set_flag(effect["flag"], effect["value"])
+			"adjust_bond":
+				GameState.adjust_bond(effect["bond"], int(effect["amount"]))
+			_:
+				_report_runtime_error("Unknown effect type '%s'." % effect["type"])
+				return false
+	return true
+
+
+func _show_condition(node: Dictionary) -> void:
+	var condition: Dictionary = node["condition"]
+	if condition["type"] != "flag_equals":
+		_report_runtime_error("Unknown condition type '%s'." % condition["type"])
+		return
+
+	var condition_matches: bool = GameState.get_flag(condition["flag"]) == condition["value"]
+	var target: String = node["true_target"] if condition_matches else node["false_target"]
+	_show_node(target)
 
 
 func _report_runtime_error(message: String) -> void:
@@ -310,4 +434,5 @@ func _finish_scene() -> void:
 
 
 func _restart_scene() -> void:
+	GameState.reset_state()
 	get_tree().reload_current_scene()
