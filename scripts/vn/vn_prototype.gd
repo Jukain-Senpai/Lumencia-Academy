@@ -1,6 +1,6 @@
 extends Control
 
-const DIALOGUE_PATH := "res://data/dialogue/vn_prototype_m1.json"
+const INITIAL_DIALOGUE_PATH := "res://data/dialogue/vn_prototype_m1.json"
 
 const CHARACTER_TEXTURES := {
 	"Jukain": {
@@ -31,6 +31,8 @@ const CHARACTER_TEXTURES := {
 var dialogue_nodes: Dictionary = {}
 var start_node_id := ""
 var current_node_id := ""
+var current_dialogue_path := ""
+var sequence_background: Texture2D
 var awaiting_choice := false
 var scene_ended := false
 var dialogue_ready := false
@@ -41,7 +43,7 @@ func _ready() -> void:
 	option_b_button.pressed.connect(_on_option_selected.bind(1))
 	restart_button.pressed.connect(_restart_scene)
 
-	dialogue_ready = _load_dialogue_data()
+	dialogue_ready = _load_dialogue_data(INITIAL_DIALOGUE_PATH)
 	if dialogue_ready:
 		_reset_prototype()
 	else:
@@ -63,11 +65,11 @@ func _input(event: InputEvent) -> void:
 		_advance_dialogue()
 
 
-func _load_dialogue_data() -> bool:
-	var file := FileAccess.open(DIALOGUE_PATH, FileAccess.READ)
+func _load_dialogue_data(dialogue_path: String) -> bool:
+	var file := FileAccess.open(dialogue_path, FileAccess.READ)
 	if file == null:
 		return _report_dialogue_error(
-			"Could not open %s: %s" % [DIALOGUE_PATH, error_string(FileAccess.get_open_error())]
+			"Could not open %s: %s" % [dialogue_path, error_string(FileAccess.get_open_error())]
 		)
 
 	var json := JSON.new()
@@ -75,17 +77,30 @@ func _load_dialogue_data() -> bool:
 	if parse_error != OK:
 		return _report_dialogue_error(
 			"Malformed JSON in %s at line %d: %s"
-			% [DIALOGUE_PATH, json.get_error_line(), json.get_error_message()]
+			% [dialogue_path, json.get_error_line(), json.get_error_message()]
 		)
 
 	if typeof(json.data) != TYPE_DICTIONARY:
-		return _report_dialogue_error("Dialogue root must be an object in %s." % DIALOGUE_PATH)
+		return _report_dialogue_error("Dialogue root must be an object in %s." % dialogue_path)
 
-	return _validate_and_index_dialogue(json.data)
+	return _validate_and_index_dialogue(json.data, dialogue_path)
 
 
-func _validate_and_index_dialogue(data: Dictionary) -> bool:
+func _validate_and_index_dialogue(data: Dictionary, dialogue_path: String) -> bool:
 	dialogue_nodes.clear()
+	var background_path := _required_string(data, "background", dialogue_path)
+	if background_path.is_empty():
+		return false
+	if not ResourceLoader.exists(background_path):
+		return _report_dialogue_error(
+			"Dialogue background '%s' does not exist for %s." % [background_path, dialogue_path]
+		)
+	var background_resource: Resource = load(background_path)
+	if not background_resource is Texture2D:
+		return _report_dialogue_error(
+			"Dialogue background '%s' is not a Texture2D." % background_path
+		)
+
 	start_node_id = _required_string(data, "start")
 	if start_node_id.is_empty():
 		return false
@@ -115,6 +130,9 @@ func _validate_and_index_dialogue(data: Dictionary) -> bool:
 					return false
 			"condition":
 				if not _validate_condition_node(node, node_id):
+					return false
+			"transition":
+				if not _validate_transition_node(node, node_id):
 					return false
 			"end":
 				pass
@@ -150,6 +168,8 @@ func _validate_and_index_dialogue(data: Dictionary) -> bool:
 						% [node_id, target_field, node[target_field]]
 					)
 
+	sequence_background = background_resource as Texture2D
+	current_dialogue_path = dialogue_path
 	return true
 
 
@@ -267,6 +287,19 @@ func _validate_condition_node(node: Dictionary, node_id: String) -> bool:
 	return true
 
 
+func _validate_transition_node(node: Dictionary, node_id: String) -> bool:
+	if not _has_only_fields(node, ["id", "type", "sequence"], "transition node '%s'" % node_id):
+		return false
+	var sequence_path := _required_string(node, "sequence", node_id)
+	if sequence_path.is_empty():
+		return false
+	if not sequence_path.begins_with("res://") or sequence_path.get_extension().to_lower() != "json":
+		return _report_dialogue_error(
+			"Transition node '%s' has malformed sequence path '%s'." % [node_id, sequence_path]
+		)
+	return true
+
+
 func _has_only_fields(data: Dictionary, allowed_fields: Array, context: String) -> bool:
 	for field: Variant in data:
 		if not allowed_fields.has(field):
@@ -319,6 +352,7 @@ func _reset_prototype() -> void:
 
 	jukain_sprite.texture = CHARACTER_TEXTURES["Jukain"]["tired"]
 	hiruko_sprite.texture = CHARACTER_TEXTURES["Hiruko"]["neutral"]
+	story_background.texture = sequence_background
 	_show_node(start_node_id)
 
 
@@ -344,6 +378,8 @@ func _show_node(node_id: String) -> void:
 			_show_choices(node)
 		"condition":
 			_show_condition(node)
+		"transition":
+			_transition_to_sequence(node)
 		"end":
 			_finish_scene()
 
@@ -413,6 +449,26 @@ func _show_condition(node: Dictionary) -> void:
 	var condition_matches: bool = GameState.get_flag(condition["flag"]) == condition["value"]
 	var target: String = node["true_target"] if condition_matches else node["false_target"]
 	_show_node(target)
+
+
+func _transition_to_sequence(node: Dictionary) -> void:
+	var sequence_path: String = node["sequence"]
+	if not _load_dialogue_data(sequence_path):
+		dialogue_ready = false
+		_show_dialogue_error()
+		return
+
+	current_node_id = ""
+	awaiting_choice = false
+	scene_ended = false
+	choice_panel.hide()
+	end_background.hide()
+	end_content.hide()
+	story_background.texture = sequence_background
+	story_background.show()
+	character_layer.show()
+	dialogue_panel.show()
+	_show_node(start_node_id)
 
 
 func _report_runtime_error(message: String) -> void:

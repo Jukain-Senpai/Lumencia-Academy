@@ -1,0 +1,61 @@
+{
+  "background": "res://assets/art/New folder/hallway_evening.png",
+  "start": "hallway_intro",
+  "nodes": [
+    {
+      "id": "hallway_intro",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "The hallway is quieter than the classroom.",
+      "next": "helped_hiruko_condition"
+    },
+    {
+      "id": "helped_hiruko_condition",
+      "type": "condition",
+      "condition": {
+        "type": "flag_equals",
+        "flag": "helped_hiruko",
+        "value": true
+      },
+      "true_target": "helped_reaction",
+      "false_target": "not_helped_reaction"
+    },
+    {
+      "id": "helped_reaction",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "faint_smile",
+      "text": "You weren't completely useless.",
+      "next": "hallway_reply"
+    },
+    {
+      "id": "not_helped_reaction",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "You disappeared before we finished.",
+      "next": "hallway_reply"
+    },
+    {
+      "id": "hallway_reply",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "I knew you'd notice.",
+      "next": "hallway_closing"
+    },
+    {
+      "id": "hallway_closing",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "Keep walking.",
+      "next": "scene_end"
+    },
+    {
+      "id": "scene_end",
+      "type": "end"
+    }
+  ]
+}

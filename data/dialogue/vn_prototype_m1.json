@@ -1,4 +1,5 @@
 {
+  "background": "res://assets/art/New folder/classroom_evening.png",
   "start": "intro_01",
   "nodes": [
     {
@@ -104,7 +105,7 @@
       "speaker": "Hiruko",
       "expression": "faint_smile",
       "text": "Your sacrifice will be remembered.",
-      "next": "helped_hiruko_condition"
+      "next": "shared_01"
     },
     {
       "id": "support_01",
@@ -120,33 +121,6 @@
       "speaker": "Hiruko",
       "expression": "annoyed",
       "text": "Then morally support that chair into the corner.",
-      "next": "helped_hiruko_condition"
-    },
-    {
-      "id": "helped_hiruko_condition",
-      "type": "condition",
-      "condition": {
-        "type": "flag_equals",
-        "flag": "helped_hiruko",
-        "value": true
-      },
-      "true_target": "helped_reaction",
-      "false_target": "not_helped_reaction"
-    },
-    {
-      "id": "helped_reaction",
-      "type": "line",
-      "speaker": "Hiruko",
-      "expression": "faint_smile",
-      "text": "At least you decided to help.",
-      "next": "shared_01"
-    },
-    {
-      "id": "not_helped_reaction",
-      "type": "line",
-      "speaker": "Hiruko",
-      "expression": "annoyed",
-      "text": "Moral support still doesn't move chairs.",
       "next": "shared_01"
     },
     {
@@ -179,11 +153,12 @@
       "speaker": "Hiruko",
       "expression": "faint_smile",
       "text": "Move.",
-      "next": "scene_end"
+      "next": "to_hallway"
     },
     {
-      "id": "scene_end",
-      "type": "end"
+      "id": "to_hallway",
+      "type": "transition",
+      "sequence": "res://data/dialogue/vn_hallway_m2_3.json"
     }
   ]
 }
