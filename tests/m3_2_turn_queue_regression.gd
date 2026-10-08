@@ -54,6 +54,7 @@ func _new_scene() -> Control:
 	if packed_scene == null:
 		return null
 	var scene: Control = packed_scene.instantiate()
+	scene.automatic_enemy_turns_enabled = false
 	root.add_child(scene)
 	current_scene = scene
 	await process_frame

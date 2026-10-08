@@ -14,9 +14,9 @@ corner_radius_top_right = 10
 corner_radius_bottom_right = 10
 corner_radius_bottom_left = 10
 content_margin_left = 14.0
-content_margin_top = 10.0
+content_margin_top = 6.0
 content_margin_right = 14.0
-content_margin_bottom = 10.0
+content_margin_bottom = 6.0
 
 [sub_resource type="StyleBoxFlat" id="Style_restart"]
 bg_color = Color(0.18, 0.28, 0.38, 1)
@@ -40,10 +40,10 @@ corner_radius_top_left = 7
 corner_radius_top_right = 7
 corner_radius_bottom_right = 7
 corner_radius_bottom_left = 7
-content_margin_left = 8.0
-content_margin_top = 6.0
-content_margin_right = 8.0
-content_margin_bottom = 6.0
+content_margin_left = 4.0
+content_margin_top = 3.0
+content_margin_right = 4.0
+content_margin_bottom = 3.0
 
 [node name="BattleSandbox" type="Control"]
 layout_mode = 3
@@ -92,12 +92,12 @@ theme_override_constants/separation = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
 theme_override_font_sizes/font_size = 28
-text = "M3.3  •  Basic Attack Sandbox"
+text = "M3.4  •  Complete Battle Loop"
 
 [node name="Subtitle" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
-text = "Nearest-line targeting and deterministic Basic Attacks — no Move yet"
+text = "Move, attack, and survive the deterministic sandbox battle"
 
 [node name="RestartButton" type="Button" parent="Margin/Layout/Header"]
 unique_name_in_owner = true
@@ -146,10 +146,11 @@ layout_mode = 2
 text = "BACK"
 horizontal_alignment = 1
 
-[node name="AllyBackUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Back/Layout"]
+[node name="AllyBackUnits" type="Control" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Back/Layout"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 228)
 layout_mode = 2
-theme_override_constants/separation = 6
+clip_contents = true
 
 [node name="Mid" type="PanelContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines"]
 layout_mode = 2
@@ -165,10 +166,11 @@ layout_mode = 2
 text = "MID"
 horizontal_alignment = 1
 
-[node name="AllyMidUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Mid/Layout"]
+[node name="AllyMidUnits" type="Control" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Mid/Layout"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 228)
 layout_mode = 2
-theme_override_constants/separation = 6
+clip_contents = true
 
 [node name="Front" type="PanelContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines"]
 layout_mode = 2
@@ -184,10 +186,11 @@ layout_mode = 2
 text = "FRONT"
 horizontal_alignment = 1
 
-[node name="AllyFrontUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Front/Layout"]
+[node name="AllyFrontUnits" type="Control" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Front/Layout"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 228)
 layout_mode = 2
-theme_override_constants/separation = 6
+clip_contents = true
 
 [node name="Divider" type="VBoxContainer" parent="Margin/Layout/Battlefield"]
 custom_minimum_size = Vector2(42, 0)
@@ -246,10 +249,11 @@ layout_mode = 2
 text = "FRONT"
 horizontal_alignment = 1
 
-[node name="EnemyFrontUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Front/Layout"]
+[node name="EnemyFrontUnits" type="Control" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Front/Layout"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 228)
 layout_mode = 2
-theme_override_constants/separation = 6
+clip_contents = true
 
 [node name="Mid" type="PanelContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines"]
 layout_mode = 2
@@ -265,10 +269,11 @@ layout_mode = 2
 text = "MID"
 horizontal_alignment = 1
 
-[node name="EnemyMidUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Mid/Layout"]
+[node name="EnemyMidUnits" type="Control" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Mid/Layout"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 228)
 layout_mode = 2
-theme_override_constants/separation = 6
+clip_contents = true
 
 [node name="Back" type="PanelContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines"]
 layout_mode = 2
@@ -284,10 +289,11 @@ layout_mode = 2
 text = "BACK"
 horizontal_alignment = 1
 
-[node name="EnemyBackUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Back/Layout"]
+[node name="EnemyBackUnits" type="Control" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Back/Layout"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 228)
 layout_mode = 2
-theme_override_constants/separation = 6
+clip_contents = true
 
 [node name="TurnDebugPanel" type="PanelContainer" parent="Margin/Layout"]
 custom_minimum_size = Vector2(0, 200)
@@ -366,6 +372,13 @@ focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
 text = "Attack"
 
+[node name="MoveButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Move"
+
 [node name="CancelButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -373,12 +386,26 @@ focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
 text = "Cancel"
 
-[node name="ResolveEnemyTurnButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+[node name="MoveFrontButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
-text = "Resolve Enemy Turn — DEBUG"
+text = "Front"
+
+[node name="MoveMidButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Mid"
+
+[node name="MoveBackButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Back"
 
 [node name="LogColumn" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
 layout_mode = 2

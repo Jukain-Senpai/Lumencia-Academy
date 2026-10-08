@@ -3,6 +3,14 @@ extends Control
 ## Milestone 3 battle sandbox. Owns fixture, round, and turn state locally.
 
 const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
+const UNIT_CARD_HEIGHT := 44.0
+const UNIT_CARD_GAP := 2.0
+
+enum BattleResult {
+	NONE,
+	VICTORY,
+	DEFEAT,
+}
 
 # Temporary sandbox fixtures. These values are intentionally small and non-canonical.
 const PARTY_FIXTURES: Array[Dictionary] = [
@@ -23,8 +31,11 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 
 @onready var restart_button: Button = %RestartButton
 @onready var attack_button: Button = %AttackButton
+@onready var move_button: Button = %MoveButton
 @onready var cancel_button: Button = %CancelButton
-@onready var resolve_enemy_button: Button = %ResolveEnemyTurnButton
+@onready var move_front_button: Button = %MoveFrontButton
+@onready var move_mid_button: Button = %MoveMidButton
+@onready var move_back_button: Button = %MoveBackButton
 @onready var action_mode_label: Label = %ActionModeLabel
 @onready var status_label: Label = %StatusLabel
 @onready var round_label: Label = %RoundLabel
@@ -41,19 +52,29 @@ var current_unit: BattleUnit = null
 var combat_log_entries: Array[String] = []
 var selecting_target := false
 var valid_attack_targets: Array[BattleUnit] = []
+var selecting_move := false
+var valid_move_destinations: Array[int] = []
 var action_in_progress := false
-var empty_side_guard_active := false
+var battle_result: BattleResult = BattleResult.NONE
+var automatic_enemy_turns_enabled := true
+var enemy_action_pending := false
+var battle_generation := 0
 
 
 func _ready() -> void:
 	restart_button.pressed.connect(restart_battle)
 	attack_button.pressed.connect(begin_attack_selection)
-	cancel_button.pressed.connect(cancel_target_selection)
-	resolve_enemy_button.pressed.connect(resolve_enemy_turn)
+	move_button.pressed.connect(begin_move_selection)
+	cancel_button.pressed.connect(cancel_action_selection)
+	move_front_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.FRONT))
+	move_mid_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.MID))
+	move_back_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.BACK))
 	restart_battle()
 
 
 func restart_battle() -> void:
+	battle_generation += 1
+	enemy_action_pending = false
 	var rebuilt_party := _build_units(PARTY_FIXTURES, BattleUnitModel.Team.PARTY)
 	var rebuilt_enemies := _build_units(ENEMY_FIXTURES, BattleUnitModel.Team.ENEMY)
 	if (
@@ -72,34 +93,41 @@ func restart_battle() -> void:
 	_start_round()
 	restart_button.release_focus()
 	attack_button.release_focus()
+	move_button.release_focus()
 	cancel_button.release_focus()
-	resolve_enemy_button.release_focus()
+	move_front_button.release_focus()
+	move_mid_button.release_focus()
+	move_back_button.release_focus()
 
 
 func advance_turn() -> void:
 	# Kept for the M3.2 regression harness. No visible M3.3 control calls this directly.
+	if action_in_progress or battle_result != BattleResult.NONE:
+		return
 	if current_unit == null:
 		push_error("Cannot advance the sandbox turn without a current actor.")
 		return
-	_clear_target_selection()
+	_clear_action_selection()
 	_activate_next_living_turn()
 
 
 func begin_attack_selection() -> bool:
 	if (
 		action_in_progress
-		or empty_side_guard_active
+		or battle_result != BattleResult.NONE
 		or current_unit == null
 		or current_unit.team != BattleUnitModel.Team.PARTY
 		or not _is_living(current_unit)
 	):
 		return false
 
-	valid_attack_targets = _get_valid_attack_targets(current_unit)
-	if valid_attack_targets.is_empty():
-		_activate_empty_side_guard(current_unit.team)
+	var targets := _get_valid_attack_targets(current_unit)
+	if targets.is_empty():
+		_check_battle_result()
 		return false
 
+	_clear_action_selection()
+	valid_attack_targets = targets
 	selecting_target = true
 	_render_battlefield()
 	_refresh_action_ui()
@@ -109,10 +137,45 @@ func begin_attack_selection() -> bool:
 func cancel_target_selection() -> bool:
 	if not selecting_target or action_in_progress:
 		return false
+	return cancel_action_selection()
+
+
+func cancel_action_selection() -> bool:
+	if (not selecting_target and not selecting_move) or action_in_progress:
+		return false
 	_clear_target_selection()
+	selecting_move = false
+	valid_move_destinations.clear()
 	_render_battlefield()
 	_refresh_action_ui()
 	return true
+
+
+func begin_move_selection() -> bool:
+	if (
+		action_in_progress
+		or battle_result != BattleResult.NONE
+		or current_unit == null
+		or current_unit.team != BattleUnitModel.Team.PARTY
+		or not _is_living(current_unit)
+	):
+		return false
+
+	_clear_action_selection()
+	valid_move_destinations = get_adjacent_lines(current_unit.line)
+	selecting_move = true
+	_refresh_action_ui()
+	return true
+
+
+func select_move_destination(destination: int) -> bool:
+	if action_in_progress or battle_result != BattleResult.NONE or not selecting_move:
+		return false
+	if current_unit == null or not _is_living(current_unit):
+		return false
+	if destination not in valid_move_destinations:
+		return false
+	return _commit_move(current_unit, destination)
 
 
 func select_attack_target(target_id: StringName) -> bool:
@@ -128,7 +191,8 @@ func resolve_enemy_turn() -> bool:
 	if (
 		action_in_progress
 		or selecting_target
-		or empty_side_guard_active
+		or selecting_move
+		or battle_result != BattleResult.NONE
 		or current_unit == null
 		or current_unit.team != BattleUnitModel.Team.ENEMY
 		or not _is_living(current_unit)
@@ -137,7 +201,7 @@ func resolve_enemy_turn() -> bool:
 
 	var targets := _get_valid_attack_targets(current_unit)
 	if targets.is_empty():
-		_activate_empty_side_guard(current_unit.team)
+		_check_battle_result()
 		return false
 	return _commit_basic_attack(current_unit, targets[0])
 
@@ -148,24 +212,24 @@ func _reset_turn_state() -> void:
 	turn_index = -1
 	current_unit = null
 	combat_log_entries.clear()
-	selecting_target = false
-	valid_attack_targets.clear()
+	_clear_action_selection()
 	action_in_progress = false
-	empty_side_guard_active = false
+	battle_result = BattleResult.NONE
+	enemy_action_pending = false
 	combat_log_label.clear()
 	_refresh_turn_ui()
 
 
 func _start_round() -> void:
+	if battle_result != BattleResult.NONE:
+		return
 	round_number += 1
 	turn_queue = _build_turn_queue(party_units + enemy_units)
 	turn_index = -1
 	current_unit = null
 
 	if turn_queue.is_empty():
-		push_error("Cannot start Round %d: the living-unit turn queue is empty." % round_number)
-		status_label.text = "Turn queue error — check the debugger."
-		_refresh_turn_ui()
+		_check_battle_result()
 		return
 
 	_append_combat_log("Round %d started." % round_number)
@@ -193,7 +257,9 @@ func _build_turn_queue(units: Array) -> Array[BattleUnit]:
 
 
 func _activate_next_living_turn() -> void:
-	_clear_target_selection()
+	if battle_result != BattleResult.NONE:
+		return
+	_clear_action_selection()
 	current_unit = null
 	while turn_index + 1 < turn_queue.size():
 		turn_index += 1
@@ -205,6 +271,7 @@ func _activate_next_living_turn() -> void:
 		current_unit = candidate
 		_append_combat_log("%s's turn." % current_unit.display_name)
 		_refresh_turn_ui()
+		_schedule_enemy_turn()
 		return
 
 	_start_round()
@@ -273,28 +340,95 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 	else:
 		_append_combat_log("%s has %d HP remaining." % [target.display_name, target.current_hp])
 
-	_clear_target_selection()
-	if _living_units_for_team(_opposing_team(attacker.team)).is_empty():
+	_clear_action_selection()
+	_render_battlefield()
+	if _check_battle_result():
 		action_in_progress = false
-		_activate_empty_side_guard(attacker.team)
 		return true
 
+	action_in_progress = false
+	_activate_next_living_turn()
+	return true
+
+
+func _commit_move(unit: BattleUnit, destination: int) -> bool:
+	if unit != current_unit or unit.team != BattleUnitModel.Team.PARTY:
+		return false
+	if destination not in get_adjacent_lines(unit.line):
+		return false
+
+	action_in_progress = true
+	var origin: int = unit.line
+	unit.line = destination as BattleUnit.Line
+	_append_combat_log("%s moves from %s to %s." % [
+		unit.display_name,
+		BattleUnitModel.line_name(origin),
+		BattleUnitModel.line_name(destination),
+	])
+	_clear_action_selection()
 	_render_battlefield()
 	action_in_progress = false
 	_activate_next_living_turn()
 	return true
 
 
-func _activate_empty_side_guard(acting_team: BattleUnit.Team) -> void:
-	empty_side_guard_active = true
-	_clear_target_selection()
+func get_adjacent_lines(origin: int) -> Array[int]:
+	match origin:
+		BattleUnitModel.Line.FRONT:
+			return [BattleUnitModel.Line.MID]
+		BattleUnitModel.Line.MID:
+			return [BattleUnitModel.Line.FRONT, BattleUnitModel.Line.BACK]
+		BattleUnitModel.Line.BACK:
+			return [BattleUnitModel.Line.MID]
+	return []
+
+
+func _schedule_enemy_turn() -> void:
+	if not automatic_enemy_turns_enabled or enemy_action_pending:
+		return
+	if battle_result != BattleResult.NONE or current_unit == null:
+		return
+	if current_unit.team != BattleUnitModel.Team.ENEMY or not _is_living(current_unit):
+		return
+	enemy_action_pending = true
+	call_deferred("_process_enemy_turn", battle_generation)
+
+
+func _process_enemy_turn(generation: int) -> bool:
+	if generation != battle_generation or not enemy_action_pending:
+		return false
+	enemy_action_pending = false
+	if battle_result != BattleResult.NONE or current_unit == null:
+		return false
+	if current_unit.team != BattleUnitModel.Team.ENEMY or not _is_living(current_unit):
+		return false
+	return resolve_enemy_turn()
+
+
+func _check_battle_result() -> bool:
+	if _living_units_for_team(BattleUnitModel.Team.ENEMY).is_empty():
+		_end_battle(BattleResult.VICTORY)
+		return true
+	if _living_units_for_team(BattleUnitModel.Team.PARTY).is_empty():
+		_end_battle(BattleResult.DEFEAT)
+		return true
+	return false
+
+
+func _end_battle(result: BattleResult) -> void:
+	if battle_result != BattleResult.NONE:
+		return
+	battle_result = result
+	battle_generation += 1
+	enemy_action_pending = false
 	current_unit = null
-	var message := (
-		"No valid enemies remain. Battle result handling is deferred to M3.4."
-		if acting_team == BattleUnitModel.Team.PARTY
-		else "No valid party members remain. Battle result handling is deferred to M3.4."
-	)
-	_append_combat_log(message)
+	_clear_action_selection()
+	if result == BattleResult.VICTORY:
+		_append_combat_log("All enemies defeated.")
+		_append_combat_log("Victory!")
+	else:
+		_append_combat_log("All party members defeated.")
+		_append_combat_log("Defeat!")
 	_render_battlefield()
 	_refresh_turn_ui()
 
@@ -335,6 +469,12 @@ func _clear_target_selection() -> void:
 	valid_attack_targets.clear()
 
 
+func _clear_action_selection() -> void:
+	_clear_target_selection()
+	selecting_move = false
+	valid_move_destinations.clear()
+
+
 func _append_combat_log(message: String) -> void:
 	combat_log_entries.append(message)
 	combat_log_label.text = "\n".join(combat_log_entries)
@@ -353,11 +493,17 @@ func _refresh_turn_ui() -> void:
 
 func _refresh_action_ui() -> void:
 	attack_button.hide()
+	move_button.hide()
 	cancel_button.hide()
-	resolve_enemy_button.hide()
-	if empty_side_guard_active:
-		action_mode_label.text = "Battle result handling is deferred to M3.4."
-		status_label.text = "No opposing targets remain."
+	move_front_button.hide()
+	move_mid_button.hide()
+	move_back_button.hide()
+	if battle_result == BattleResult.VICTORY:
+		action_mode_label.text = "VICTORY"
+		status_label.text = "All enemies defeated. Restart to play again."
+	elif battle_result == BattleResult.DEFEAT:
+		action_mode_label.text = "DEFEAT"
+		status_label.text = "All party members defeated. Restart to try again."
 	elif current_unit == null:
 		action_mode_label.text = "No current actor"
 		status_label.text = "Turn engine paused."
@@ -365,14 +511,21 @@ func _refresh_action_ui() -> void:
 		action_mode_label.text = "Attack — Select Target"
 		cancel_button.show()
 		status_label.text = "Choose a marked target or cancel."
+	elif selecting_move:
+		action_mode_label.text = "Move — Select Line"
+		cancel_button.show()
+		move_front_button.visible = BattleUnitModel.Line.FRONT in valid_move_destinations
+		move_mid_button.visible = BattleUnitModel.Line.MID in valid_move_destinations
+		move_back_button.visible = BattleUnitModel.Line.BACK in valid_move_destinations
+		status_label.text = "Choose an adjacent line or cancel."
 	elif current_unit.team == BattleUnitModel.Team.PARTY:
 		action_mode_label.text = "Choose action"
 		attack_button.show()
-		status_label.text = "Party turn — Basic Attack is required."
+		move_button.show()
+		status_label.text = "Party turn — Attack or move."
 	else:
-		action_mode_label.text = "Enemy turn"
-		resolve_enemy_button.show()
-		status_label.text = "Resolve one deterministic enemy attack."
+		action_mode_label.text = "Enemy turn resolving…"
+		status_label.text = "Enemy Basic Attack resolves automatically."
 
 
 func _build_units(fixtures: Array[Dictionary], expected_team: BattleUnit.Team) -> Array[BattleUnit]:
@@ -406,16 +559,23 @@ func _has_unique_ids(units: Array[BattleUnit]) -> bool:
 
 
 func _render_battlefield() -> void:
-	for container: VBoxContainer in _all_line_containers():
+	var next_slots: Dictionary = {}
+	for container: Control in _all_line_containers():
 		for child: Node in container.get_children():
 			container.remove_child(child)
 			child.queue_free()
+		next_slots[container] = 0
 
 	for unit: BattleUnit in party_units + enemy_units:
-		_line_container_for(unit.team, unit.line).add_child(_create_unit_card(unit))
+		var container := _line_container_for(unit.team, unit.line)
+		var slot: int = next_slots[container]
+		var card := _create_unit_card(unit)
+		container.add_child(card)
+		_position_unit_card(card, slot)
+		next_slots[container] = slot + 1
 
 
-func _all_line_containers() -> Array[VBoxContainer]:
+func _all_line_containers() -> Array[Control]:
 	return [
 		%AllyBackUnits,
 		%AllyMidUnits,
@@ -426,7 +586,7 @@ func _all_line_containers() -> Array[VBoxContainer]:
 	]
 
 
-func _line_container_for(team: BattleUnit.Team, line: BattleUnit.Line) -> VBoxContainer:
+func _line_container_for(team: BattleUnit.Team, line: BattleUnit.Line) -> Control:
 	if team == BattleUnitModel.Team.PARTY:
 		match line:
 			BattleUnitModel.Line.FRONT:
@@ -450,7 +610,7 @@ func _line_container_for(team: BattleUnit.Team, line: BattleUnit.Line) -> VBoxCo
 
 func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(132, 96)
+	card.custom_minimum_size = Vector2(0, UNIT_CARD_HEIGHT)
 	card.tooltip_text = "Stable ID: %s" % unit.stable_id
 
 	var style := StyleBoxFlat.new()
@@ -464,56 +624,74 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 		style.border_color = Color("f2c879")
 		style.set_border_width_all(4)
 	style.set_corner_radius_all(8)
-	style.content_margin_left = 8.0
-	style.content_margin_top = 8.0
-	style.content_margin_right = 8.0
-	style.content_margin_bottom = 8.0
+	style.content_margin_left = 5.0
+	style.content_margin_top = 2.0
+	style.content_margin_right = 5.0
+	style.content_margin_bottom = 2.0
 	card.add_theme_stylebox_override("panel", style)
 
 	var details := VBoxContainer.new()
 	details.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	details.add_theme_constant_override("separation", 3)
+	details.add_theme_constant_override("separation", 0)
 	card.add_child(details)
 
 	var identity_row := HBoxContainer.new()
 	identity_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	identity_row.add_theme_constant_override("separation", 2)
 	details.add_child(identity_row)
 
 	var name_label := Label.new()
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	name_label.text = unit.display_name
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.add_theme_font_size_override("font_size", 18)
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.add_theme_font_size_override("font_size", 13)
 	identity_row.add_child(name_label)
+
+	var state_label := Label.new()
+	state_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	state_label.add_theme_font_size_override("font_size", 9)
+	if unit.defeated:
+		state_label.text = "DEFEATED"
+		state_label.add_theme_color_override("font_color", Color("d4858f"))
+	elif selecting_target and _contains_unit(valid_attack_targets, unit):
+		state_label.text = "SELECT TARGET"
+		state_label.add_theme_color_override("font_color", Color("f2c879"))
+		card.tooltip_text = "Click to attack %s" % unit.display_name
+		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		card.mouse_filter = Control.MOUSE_FILTER_STOP
+		card.gui_input.connect(_on_target_card_input.bind(unit.stable_id))
+	identity_row.add_child(state_label)
 
 	var line_label := Label.new()
 	line_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line_label.text = BattleUnitModel.line_name(unit.line).to_upper()
 	line_label.add_theme_color_override("font_color", Color("f2c879"))
+	line_label.add_theme_font_size_override("font_size", 11)
 	identity_row.add_child(line_label)
-
-	var hp_label := Label.new()
-	hp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hp_label.text = "HP  %d / %d" % [unit.current_hp, unit.max_hp]
-	details.add_child(hp_label)
 
 	var stats_label := Label.new()
 	stats_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if unit.defeated:
-		stats_label.text = "DEFEATED"
-		stats_label.add_theme_color_override("font_color", Color("d4858f"))
-	elif selecting_target and _contains_unit(valid_attack_targets, unit):
-		stats_label.text = "SELECT TARGET"
-		stats_label.add_theme_color_override("font_color", Color("f2c879"))
-		card.tooltip_text = "Click to attack %s" % unit.display_name
-		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		card.mouse_filter = Control.MOUSE_FILTER_STOP
-		card.gui_input.connect(_on_target_card_input.bind(unit.stable_id))
-	else:
-		stats_label.text = "ATK %d     SPD %d" % [unit.atk, unit.spd]
-		stats_label.add_theme_color_override("font_color", Color("c9d6e2"))
+	stats_label.text = "HP %d/%d  ATK %d  SPD %d" % [
+		unit.current_hp,
+		unit.max_hp,
+		unit.atk,
+		unit.spd,
+	]
+	stats_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	stats_label.add_theme_font_size_override("font_size", 11)
+	stats_label.add_theme_color_override("font_color", Color("c9d6e2"))
 	details.add_child(stats_label)
 	return card
+
+
+func _position_unit_card(card: Control, slot: int) -> void:
+	card.anchor_left = 0.0
+	card.anchor_right = 1.0
+	card.offset_left = 0.0
+	card.offset_right = 0.0
+	card.offset_top = slot * (UNIT_CARD_HEIGHT + UNIT_CARD_GAP)
+	card.offset_bottom = card.offset_top + UNIT_CARD_HEIGHT
 
 
 func _on_target_card_input(event: InputEvent, target_id: StringName) -> void:

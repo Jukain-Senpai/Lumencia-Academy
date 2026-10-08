@@ -45,6 +45,7 @@ func _new_scene() -> Control:
 	if packed_scene == null:
 		return null
 	var scene: Control = packed_scene.instantiate()
+	scene.automatic_enemy_turns_enabled = false
 	root.add_child(scene)
 	current_scene = scene
 	await process_frame
@@ -55,8 +56,8 @@ func _test_initial_target_availability(scene: Control) -> void:
 	var party_1 := _find_unit(scene, &"party_1")
 	_check(_ids(scene._get_valid_attack_targets(party_1)) == [&"enemy_a", &"enemy_b"], "Party target list did not contain exactly the living enemy Front")
 	_check(scene._get_nearest_occupied_line(BattleUnitModel.Team.ENEMY) == BattleUnitModel.Line.FRONT, "Enemy Front was not the nearest occupied line")
-	_check(scene.get_node("%ResolveEnemyTurnButton").visible, "Enemy resolve control was not visible at battle start")
 	_check(not scene.get_node("%AttackButton").visible, "Attack was visible during an enemy turn")
+	_check(not scene.get_node("%MoveButton").visible, "Move was visible during an enemy turn")
 
 
 func _test_exact_damage_and_turn_consumption(scene: Control) -> void:
@@ -183,10 +184,9 @@ func _test_restart(scene: Control) -> void:
 	_check(scene.round_number == 1, "Restart did not restore Round 1")
 	_check(scene.current_unit.stable_id == &"enemy_a", "Restart did not restore Enemy A as current actor")
 	_check(not scene.selecting_target and scene.valid_attack_targets.is_empty(), "Restart retained target-selection state")
-	_check(not scene.empty_side_guard_active, "Restart retained empty-side guard state")
+	_check(scene.battle_result == scene.BattleResult.NONE, "Restart retained terminal battle state")
 	_check(scene.combat_log_entries == ["Battle started.", "Round 1 started.", "Enemy A's turn."], "Restart did not restore a clean M3.3 log")
-	_check(scene.get_node("%ResolveEnemyTurnButton").visible, "Restart did not restore enemy resolve control")
-	_check(not scene.get_node("%AttackButton").visible and not scene.get_node("%CancelButton").visible, "Restart retained player action controls")
+	_check(not scene.get_node("%AttackButton").visible and not scene.get_node("%MoveButton").visible and not scene.get_node("%CancelButton").visible, "Restart retained player action controls")
 	for unit: BattleUnit in scene.party_units + scene.enemy_units:
 		_check(unit.current_hp == unit.max_hp and not unit.defeated, "Restart did not restore '%s'" % unit.stable_id)
 
@@ -202,10 +202,10 @@ func _test_empty_side_safety(scene: Control) -> void:
 	_check(scene.begin_attack_selection(), "Last living enemy could not be targeted")
 	_check(_ids(scene.valid_attack_targets) == [&"enemy_d"], "Last living enemy was not the sole valid target")
 	_check(scene.select_attack_target(&"enemy_d"), "Attack against final living enemy failed")
-	_check(scene.empty_side_guard_active, "Empty enemy side did not activate the temporary safety guard")
-	_check(scene.current_unit == null, "Empty-side safety retained an unsafe current actor")
-	_check(scene.combat_log_entries.has("No valid enemies remain. Battle result handling is deferred to M3.4."), "Empty-side deferral was not logged")
-	_check(not scene.get_node("%AttackButton").visible and not scene.get_node("%ResolveEnemyTurnButton").visible, "Action controls remained active after a side became empty")
+	_check(scene.battle_result == scene.BattleResult.VICTORY, "Final enemy defeat did not produce victory")
+	_check(scene.current_unit == null, "Victory retained an unsafe current actor")
+	_check(scene.combat_log_entries.has("Victory!"), "Victory was not logged")
+	_check(not scene.get_node("%AttackButton").visible and not scene.get_node("%MoveButton").visible, "Action controls remained active after victory")
 
 
 func _find_unit(scene: Control, id: StringName) -> BattleUnit:
