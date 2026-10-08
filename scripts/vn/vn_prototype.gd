@@ -1,6 +1,10 @@
 extends Control
 
 const INITIAL_DIALOGUE_PATH := "res://data/dialogue/vn_prototype_m1.json"
+const KNOWN_DIALOGUE_PATHS := [
+	INITIAL_DIALOGUE_PATH,
+	"res://data/dialogue/vn_hallway_m2_3.json",
+]
 
 const CHARACTER_TEXTURES := {
 	"Jukain": {
@@ -27,6 +31,10 @@ const CHARACTER_TEXTURES := {
 @onready var end_background: ColorRect = %EndBackground
 @onready var end_content: VBoxContainer = %EndContent
 @onready var restart_button: Button = %RestartButton
+@onready var save_button: Button = %SaveButton
+@onready var load_button: Button = %LoadButton
+@onready var new_run_button: Button = %NewRunButton
+@onready var save_status_label: Label = %SaveStatusLabel
 
 var dialogue_nodes: Dictionary = {}
 var start_node_id := ""
@@ -36,21 +44,27 @@ var sequence_background: Texture2D
 var awaiting_choice := false
 var scene_ended := false
 var dialogue_ready := false
+var last_dialogue_error := ""
 
 
 func _ready() -> void:
 	option_a_button.pressed.connect(_on_option_selected.bind(0))
 	option_b_button.pressed.connect(_on_option_selected.bind(1))
 	restart_button.pressed.connect(_restart_scene)
+	save_button.pressed.connect(_save_game)
+	load_button.pressed.connect(_load_game)
+	new_run_button.pressed.connect(_start_new_run)
 
 	dialogue_ready = _load_dialogue_data(INITIAL_DIALOGUE_PATH)
 	if dialogue_ready:
 		_reset_prototype()
 	else:
 		_show_dialogue_error()
+	save_status_label.text = "Save available." if GameState.has_save_file() else "No save available."
+	_refresh_persistence_controls()
 
 
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	if not dialogue_ready or scene_ended or awaiting_choice:
 		return
 
@@ -66,111 +80,144 @@ func _input(event: InputEvent) -> void:
 
 
 func _load_dialogue_data(dialogue_path: String) -> bool:
+	var dialogue_package := _read_and_validate_dialogue(dialogue_path)
+	if dialogue_package.is_empty():
+		return false
+	_apply_dialogue_sequence(dialogue_package)
+	return true
+
+
+func _read_and_validate_dialogue(dialogue_path: String) -> Dictionary:
+	last_dialogue_error = ""
 	var file := FileAccess.open(dialogue_path, FileAccess.READ)
 	if file == null:
-		return _report_dialogue_error(
+		_report_dialogue_error(
 			"Could not open %s: %s" % [dialogue_path, error_string(FileAccess.get_open_error())]
 		)
+		return {}
 
 	var json := JSON.new()
 	var parse_error := json.parse(file.get_as_text())
 	if parse_error != OK:
-		return _report_dialogue_error(
+		_report_dialogue_error(
 			"Malformed JSON in %s at line %d: %s"
 			% [dialogue_path, json.get_error_line(), json.get_error_message()]
 		)
+		return {}
 
 	if typeof(json.data) != TYPE_DICTIONARY:
-		return _report_dialogue_error("Dialogue root must be an object in %s." % dialogue_path)
+		_report_dialogue_error("Dialogue root must be an object in %s." % dialogue_path)
+		return {}
 
-	return _validate_and_index_dialogue(json.data, dialogue_path)
+	return _validate_dialogue_data(json.data, dialogue_path)
 
 
-func _validate_and_index_dialogue(data: Dictionary, dialogue_path: String) -> bool:
-	dialogue_nodes.clear()
+func _validate_dialogue_data(data: Dictionary, dialogue_path: String) -> Dictionary:
 	var background_path := _required_string(data, "background", dialogue_path)
 	if background_path.is_empty():
-		return false
+		return {}
 	if not ResourceLoader.exists(background_path):
-		return _report_dialogue_error(
+		_report_dialogue_error(
 			"Dialogue background '%s' does not exist for %s." % [background_path, dialogue_path]
 		)
+		return {}
 	var background_resource: Resource = load(background_path)
 	if not background_resource is Texture2D:
-		return _report_dialogue_error(
+		_report_dialogue_error(
 			"Dialogue background '%s' is not a Texture2D." % background_path
 		)
+		return {}
 
-	start_node_id = _required_string(data, "start")
-	if start_node_id.is_empty():
-		return false
+	var validated_start_node := _required_string(data, "start")
+	if validated_start_node.is_empty():
+		return {}
 
 	var raw_nodes: Variant = data.get("nodes", [])
 	if typeof(raw_nodes) != TYPE_ARRAY or raw_nodes.is_empty():
-		return _report_dialogue_error("Dialogue data requires a non-empty 'nodes' array.")
+		_report_dialogue_error("Dialogue data requires a non-empty 'nodes' array.")
+		return {}
+
+	var validated_nodes: Dictionary = {}
 
 	for raw_node: Variant in raw_nodes:
 		if typeof(raw_node) != TYPE_DICTIONARY:
-			return _report_dialogue_error("Every dialogue node must be an object.")
+			_report_dialogue_error("Every dialogue node must be an object.")
+			return {}
 
 		var node: Dictionary = raw_node
 		var node_id := _required_string(node, "id")
 		var node_type := _required_string(node, "type")
 		if node_id.is_empty() or node_type.is_empty():
-			return false
-		if dialogue_nodes.has(node_id):
-			return _report_dialogue_error("Duplicate dialogue node ID '%s'." % node_id)
+			return {}
+		if validated_nodes.has(node_id):
+			_report_dialogue_error("Duplicate dialogue node ID '%s'." % node_id)
+			return {}
 
 		match node_type:
 			"line":
 				if not _validate_line_node(node, node_id):
-					return false
+					return {}
 			"choice":
 				if not _validate_choice_node(node, node_id):
-					return false
+					return {}
 			"condition":
 				if not _validate_condition_node(node, node_id):
-					return false
+					return {}
 			"transition":
 				if not _validate_transition_node(node, node_id):
-					return false
+					return {}
 			"end":
 				pass
 			_:
-				return _report_dialogue_error(
+				_report_dialogue_error(
 					"Node '%s' has unsupported type '%s'." % [node_id, node_type]
 				)
+				return {}
 
-		dialogue_nodes[node_id] = node
+		validated_nodes[node_id] = node
 
-	if not dialogue_nodes.has(start_node_id):
-		return _report_dialogue_error("Start node '%s' does not exist." % start_node_id)
+	if not validated_nodes.has(validated_start_node):
+		_report_dialogue_error("Start node '%s' does not exist." % validated_start_node)
+		return {}
 
-	for node_id: String in dialogue_nodes:
-		var node: Dictionary = dialogue_nodes[node_id]
+	for node_id: String in validated_nodes:
+		var node: Dictionary = validated_nodes[node_id]
 		if node["type"] == "line":
-			if not dialogue_nodes.has(node["next"]):
-				return _report_dialogue_error(
+			if not validated_nodes.has(node["next"]):
+				_report_dialogue_error(
 					"Line node '%s' targets missing node '%s'." % [node_id, node["next"]]
 				)
+				return {}
 		elif node["type"] == "choice":
 			for option: Dictionary in node["options"]:
-				if not dialogue_nodes.has(option["target"]):
-					return _report_dialogue_error(
+				if not validated_nodes.has(option["target"]):
+					_report_dialogue_error(
 						"Choice node '%s' targets missing branch '%s'."
 						% [node_id, option["target"]]
 					)
+					return {}
 		elif node["type"] == "condition":
 			for target_field in ["true_target", "false_target"]:
-				if not dialogue_nodes.has(node[target_field]):
-					return _report_dialogue_error(
+				if not validated_nodes.has(node[target_field]):
+					_report_dialogue_error(
 						"Condition node '%s' has missing %s '%s'."
 						% [node_id, target_field, node[target_field]]
 					)
+					return {}
 
-	sequence_background = background_resource as Texture2D
-	current_dialogue_path = dialogue_path
-	return true
+	return {
+		"path": dialogue_path,
+		"start": validated_start_node,
+		"nodes": validated_nodes,
+		"background": background_resource,
+	}
+
+
+func _apply_dialogue_sequence(dialogue_package: Dictionary) -> void:
+	current_dialogue_path = dialogue_package["path"]
+	start_node_id = dialogue_package["start"]
+	dialogue_nodes = dialogue_package["nodes"]
+	sequence_background = dialogue_package["background"]
 
 
 func _validate_line_node(node: Dictionary, node_id: String) -> bool:
@@ -321,6 +368,7 @@ func _required_string(data: Dictionary, field: String, context := "dialogue root
 
 
 func _report_dialogue_error(message: String) -> bool:
+	last_dialogue_error = message
 	push_error("VN dialogue error: %s" % message)
 	return false
 
@@ -336,6 +384,7 @@ func _show_dialogue_error() -> void:
 	dialogue_panel.show()
 	speaker_name.text = "Dialogue Error"
 	dialogue_text.text = "The scene data could not be loaded. Check the Godot debugger for details."
+	_refresh_persistence_controls()
 
 
 func _reset_prototype() -> void:
@@ -398,6 +447,7 @@ func _show_line(line: Dictionary) -> void:
 		hiruko_sprite.texture = CHARACTER_TEXTURES[speaker][expression]
 		hiruko_sprite.modulate = Color.WHITE
 		jukain_sprite.modulate = Color(0.58, 0.58, 0.64, 0.82)
+	_refresh_persistence_controls()
 
 
 func _show_choices(choice: Dictionary) -> void:
@@ -407,6 +457,8 @@ func _show_choices(choice: Dictionary) -> void:
 	awaiting_choice = true
 	choice_panel.show()
 	option_a_button.grab_focus()
+	save_status_label.text = "Choose an option before saving."
+	_refresh_persistence_controls()
 
 
 func _on_option_selected(option_index: int) -> void:
@@ -420,6 +472,7 @@ func _on_option_selected(option_index: int) -> void:
 		return
 
 	awaiting_choice = false
+	_release_choice_focus()
 	choice_panel.hide()
 	var selected_option: Dictionary = options[option_index]
 	if not _apply_choice_effects(selected_option):
@@ -449,6 +502,111 @@ func _show_condition(node: Dictionary) -> void:
 	var condition_matches: bool = GameState.get_flag(condition["flag"]) == condition["value"]
 	var target: String = node["true_target"] if condition_matches else node["false_target"]
 	_show_node(target)
+
+
+func _save_game() -> void:
+	_release_utility_focus()
+	if not _can_save_current_state():
+		save_status_label.text = "Save is available only on a normal dialogue line."
+		_refresh_persistence_controls()
+		return
+
+	if GameState.save_game(current_dialogue_path, current_node_id):
+		save_status_label.text = "Game saved."
+	else:
+		save_status_label.text = "Save failed: %s" % GameState.persistence_error
+	_refresh_persistence_controls()
+
+
+func _load_game() -> void:
+	var save_data := GameState.read_save_data()
+	if save_data.is_empty():
+		save_status_label.text = "Load failed: %s" % GameState.persistence_error
+		_refresh_persistence_controls()
+		return
+
+	var saved_sequence: String = save_data["sequence"]
+	var saved_node_id: String = save_data["node"]
+	if not KNOWN_DIALOGUE_PATHS.has(saved_sequence):
+		_report_save_load_error("Unknown saved dialogue sequence '%s'." % saved_sequence)
+		return
+
+	var dialogue_package := _read_and_validate_dialogue(saved_sequence)
+	if dialogue_package.is_empty():
+		_report_save_load_error(last_dialogue_error)
+		return
+	var saved_nodes: Dictionary = dialogue_package["nodes"]
+	if not saved_nodes.has(saved_node_id):
+		_report_save_load_error(
+			"Saved dialogue node '%s' does not exist in %s." % [saved_node_id, saved_sequence]
+		)
+		return
+	var saved_node: Dictionary = saved_nodes[saved_node_id]
+	if saved_node["type"] != "line":
+		_report_save_load_error(
+			"Saved dialogue node '%s' is not a stable normal line." % saved_node_id
+		)
+		return
+
+	GameState.restore_from_save_data(save_data)
+	_apply_dialogue_sequence(dialogue_package)
+	dialogue_ready = true
+	current_node_id = saved_node_id
+	awaiting_choice = false
+	scene_ended = false
+	_release_utility_focus()
+	_release_choice_focus()
+	choice_panel.hide()
+	end_background.hide()
+	end_content.hide()
+	story_background.texture = sequence_background
+	story_background.show()
+	character_layer.show()
+	dialogue_panel.show()
+	jukain_sprite.texture = CHARACTER_TEXTURES["Jukain"]["tired"]
+	hiruko_sprite.texture = CHARACTER_TEXTURES["Hiruko"]["neutral"]
+	_show_line(saved_node)
+	save_status_label.text = "Game loaded."
+	_refresh_persistence_controls()
+
+
+func _report_save_load_error(message: String) -> void:
+	var visible_message := message if not message.is_empty() else "Unknown save data error."
+	push_error("Save load error: %s" % visible_message)
+	save_status_label.text = "Load failed: %s" % visible_message
+	_refresh_persistence_controls()
+
+
+func _can_save_current_state() -> bool:
+	if not dialogue_ready or awaiting_choice or scene_ended:
+		return false
+	var current_node: Dictionary = dialogue_nodes.get(current_node_id, {})
+	return current_node.get("type", "") == "line"
+
+
+func _refresh_persistence_controls() -> void:
+	if not is_node_ready():
+		return
+	save_button.disabled = not _can_save_current_state()
+	load_button.disabled = not GameState.has_save_file()
+
+
+func _release_utility_focus() -> void:
+	save_button.release_focus()
+	load_button.release_focus()
+	new_run_button.release_focus()
+
+
+func _release_choice_focus() -> void:
+	option_a_button.release_focus()
+	option_b_button.release_focus()
+
+
+func _start_new_run() -> void:
+	_release_utility_focus()
+	_release_choice_focus()
+	GameState.reset_state()
+	get_tree().reload_current_scene()
 
 
 func _transition_to_sequence(node: Dictionary) -> void:
@@ -487,8 +645,8 @@ func _finish_scene() -> void:
 	end_background.show()
 	end_content.show()
 	restart_button.grab_focus()
+	_refresh_persistence_controls()
 
 
 func _restart_scene() -> void:
-	GameState.reset_state()
-	get_tree().reload_current_scene()
+	_start_new_run()

@@ -246,3 +246,52 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 20
 theme_override_styles/normal = SubResource("StyleBox_button")
 text = "Restart"
+
+[node name="PersistenceControls" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -410.0
+offset_top = 18.0
+offset_right = -18.0
+offset_bottom = 102.0
+grow_horizontal = 0
+theme_override_constants/separation = 6
+
+[node name="Buttons" type="HBoxContainer" parent="PersistenceControls"]
+layout_mode = 2
+alignment = 2
+theme_override_constants/separation = 8
+
+[node name="SaveButton" type="Button" parent="PersistenceControls/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("StyleBox_button")
+text = "Save"
+
+[node name="LoadButton" type="Button" parent="PersistenceControls/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("StyleBox_button")
+text = "Load"
+
+[node name="NewRunButton" type="Button" parent="PersistenceControls/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("StyleBox_button")
+text = "New Run"
+
+[node name="SaveStatusLabel" type="Label" parent="PersistenceControls"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.86, 0.98, 1)
+theme_override_font_sizes/font_size = 14
+text = "No save available."
+horizontal_alignment = 2
