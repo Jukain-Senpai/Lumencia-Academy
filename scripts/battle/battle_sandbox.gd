@@ -1,6 +1,6 @@
 extends Control
 
-## Milestone 5.2 battle sandbox. Owns fixture, turn flow, character state, and one Prescript.
+## Milestone 5.3 battle sandbox. Owns fixture, turn flow, character state, and one Prescript.
 
 const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
 const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_state.gd")
@@ -25,6 +25,10 @@ enum HirukoSkill {
 	GUT_STAB,
 }
 
+enum JukainReplicaForm {
+	SCYTHE,
+}
+
 # Temporary sandbox fixtures. Hiruko and Jukain retain their M3 slot values; none are canon balance.
 const PARTY_FIXTURES: Array[Dictionary] = [
 	{"id": "party_1", "name": "Hiruko", "team": BattleUnitModel.Team.PARTY, "current_hp": 44, "max_hp": 44, "atk": 10, "spd": 14, "line": BattleUnitModel.Line.MID, "defeated": false},
@@ -44,10 +48,14 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 
 @onready var restart_button: Button = %RestartButton
 @onready var attack_button: Button = %AttackButton
+@onready var form_chain_button: Button = %FormChainButton
 @onready var skill_button: Button = %SkillButton
 @onready var move_button: Button = %MoveButton
 @onready var cancel_button: Button = %CancelButton
 @onready var confirm_ally_attack_button: Button = %ConfirmAllyAttackButton
+@onready var scythe_form_button: Button = %ScytheFormButton
+@onready var undo_chain_button: Button = %UndoChainButton
+@onready var execute_chain_button: Button = %ExecuteChainButton
 @onready var kick_skill_button: Button = %KickSkillButton
 @onready var gut_stab_skill_button: Button = %GutStabSkillButton
 @onready var skill_back_button: Button = %SkillBackButton
@@ -55,6 +63,7 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var move_mid_button: Button = %MoveMidButton
 @onready var move_back_button: Button = %MoveBackButton
 @onready var action_mode_label: Label = %ActionModeLabel
+@onready var chain_slots_label: Label = %ChainSlotsLabel
 @onready var status_label: Label = %StatusLabel
 @onready var round_label: Label = %RoundLabel
 @onready var current_turn_label: Label = %CurrentTurnLabel
@@ -94,6 +103,10 @@ var jukain_state: RefCounted = null
 var jukain_prescript: RefCounted = null
 var selected_inspector_unit_id: StringName = HIRUKO_UNIT_ID
 var ally_attack_confirmation_target_id: StringName = &""
+var selecting_jukain_chain_target := false
+var valid_jukain_chain_targets: Array[BattleUnit] = []
+var jukain_chain_target_id: StringName = &""
+var jukain_chain_slots: Array[JukainReplicaForm] = []
 var burn_remaining_ticks_by_unit_id: Dictionary = {}
 var laevatain_aura_turn_token := ""
 
@@ -101,10 +114,14 @@ var laevatain_aura_turn_token := ""
 func _ready() -> void:
 	restart_button.pressed.connect(restart_battle)
 	attack_button.pressed.connect(begin_attack_selection)
+	form_chain_button.pressed.connect(begin_jukain_form_chain)
 	skill_button.pressed.connect(begin_skill_selection)
 	move_button.pressed.connect(begin_move_selection)
 	cancel_button.pressed.connect(cancel_action_selection)
 	confirm_ally_attack_button.pressed.connect(confirm_ally_attack)
+	scythe_form_button.pressed.connect(select_jukain_chain_form.bind(JukainReplicaForm.SCYTHE))
+	undo_chain_button.pressed.connect(undo_jukain_chain_form)
+	execute_chain_button.pressed.connect(execute_jukain_form_chain)
 	kick_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.KICK))
 	gut_stab_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.GUT_STAB))
 	skill_back_button.pressed.connect(back_from_skill_menu)
@@ -153,10 +170,14 @@ func restart_battle() -> void:
 	_start_round()
 	restart_button.release_focus()
 	attack_button.release_focus()
+	form_chain_button.release_focus()
 	skill_button.release_focus()
 	move_button.release_focus()
 	cancel_button.release_focus()
 	confirm_ally_attack_button.release_focus()
+	scythe_form_button.release_focus()
+	undo_chain_button.release_focus()
+	execute_chain_button.release_focus()
 	kick_skill_button.release_focus()
 	gut_stab_skill_button.release_focus()
 	skill_back_button.release_focus()
@@ -214,15 +235,18 @@ func debug_unlock_jukain() -> bool:
 		return false
 	_append_combat_log("Jukain debug state changed to UNLOCKED.")
 	_render_battlefield()
+	_refresh_action_ui()
 	return true
 
 
 func debug_reset_jukain() -> bool:
 	if jukain_state == null:
 		return false
+	_clear_jukain_chain_selection()
 	jukain_state.reset()
 	_append_combat_log("Jukain debug state reset to LOCKED.")
 	_render_battlefield()
+	_refresh_action_ui()
 	return true
 
 
@@ -240,6 +264,7 @@ func advance_turn() -> void:
 func begin_attack_selection() -> bool:
 	if (
 		action_in_progress
+		or _is_jukain_chain_selection_active()
 		or selecting_skill
 		or selected_hiruko_skill != HirukoSkill.NONE
 		or battle_result != BattleResult.NONE
@@ -264,7 +289,11 @@ func begin_attack_selection() -> bool:
 
 func cancel_target_selection() -> bool:
 	if (
-		(not selecting_target and selected_hiruko_skill == HirukoSkill.NONE)
+		(
+			not selecting_target
+			and not selecting_jukain_chain_target
+			and selected_hiruko_skill == HirukoSkill.NONE
+		)
 		or action_in_progress
 	):
 		return false
@@ -274,6 +303,11 @@ func cancel_target_selection() -> bool:
 func cancel_action_selection() -> bool:
 	if action_in_progress:
 		return false
+	if _is_jukain_chain_selection_active():
+		_clear_jukain_chain_selection()
+		_render_battlefield()
+		_refresh_action_ui()
+		return true
 	if ally_attack_confirmation_target_id != &"":
 		ally_attack_confirmation_target_id = &""
 		_render_battlefield()
@@ -301,6 +335,7 @@ func cancel_action_selection() -> bool:
 func begin_move_selection() -> bool:
 	if (
 		action_in_progress
+		or _is_jukain_chain_selection_active()
 		or selecting_skill
 		or selected_hiruko_skill != HirukoSkill.NONE
 		or battle_result != BattleResult.NONE
@@ -320,6 +355,7 @@ func begin_move_selection() -> bool:
 func begin_skill_selection() -> bool:
 	if (
 		action_in_progress
+		or _is_jukain_chain_selection_active()
 		or battle_result != BattleResult.NONE
 		or current_unit != hiruko_unit
 		or not _is_living(hiruko_unit)
@@ -331,6 +367,119 @@ func begin_skill_selection() -> bool:
 		return false
 	selecting_skill = true
 	_refresh_action_ui()
+	return true
+
+
+func begin_jukain_form_chain() -> bool:
+	if not _can_begin_jukain_form_chain():
+		return false
+	var targets := _get_valid_jukain_chain_targets()
+	if targets.is_empty():
+		_check_battle_result()
+		return false
+
+	_clear_action_selection()
+	selecting_jukain_chain_target = true
+	valid_jukain_chain_targets = targets
+	_render_battlefield()
+	_refresh_action_ui()
+	return true
+
+
+func select_jukain_chain_target(target_id: StringName) -> bool:
+	if (
+		action_in_progress
+		or not selecting_jukain_chain_target
+		or current_unit != jukain_unit
+		or not _is_living(jukain_unit)
+		or jukain_state.get_state() != JukainCombatStateModel.State.UNLOCKED
+	):
+		return false
+	var target := _find_unit_by_id(target_id)
+	if target == null or not _contains_unit(valid_jukain_chain_targets, target):
+		return false
+
+	selecting_jukain_chain_target = false
+	valid_jukain_chain_targets.clear()
+	jukain_chain_target_id = target.stable_id
+	jukain_chain_slots.clear()
+	_render_battlefield()
+	_refresh_action_ui()
+	return true
+
+
+func select_jukain_chain_form(form: JukainReplicaForm) -> bool:
+	if (
+		action_in_progress
+		or jukain_chain_target_id == &""
+		or current_unit != jukain_unit
+		or not _is_living(jukain_unit)
+		or battle_result != BattleResult.NONE
+		or jukain_state.get_state() != JukainCombatStateModel.State.UNLOCKED
+		or form != JukainReplicaForm.SCYTHE
+		or jukain_chain_slots.size() >= 4
+	):
+		return false
+	jukain_chain_slots.append(form)
+	_refresh_action_ui()
+	return true
+
+
+func undo_jukain_chain_form() -> bool:
+	if action_in_progress or jukain_chain_target_id == &"" or jukain_chain_slots.is_empty():
+		return false
+	jukain_chain_slots.pop_back()
+	_refresh_action_ui()
+	return true
+
+
+func execute_jukain_form_chain() -> bool:
+	if (
+		action_in_progress
+		or battle_result != BattleResult.NONE
+		or current_unit != jukain_unit
+		or not _is_living(jukain_unit)
+		or jukain_state.get_state() != JukainCombatStateModel.State.UNLOCKED
+		or jukain_chain_target_id == &""
+		or jukain_chain_slots.size() != 4
+	):
+		return false
+	for form: JukainReplicaForm in jukain_chain_slots:
+		if form != JukainReplicaForm.SCYTHE:
+			return false
+
+	var target := _find_unit_by_id(jukain_chain_target_id)
+	if target == null or target.team != BattleUnitModel.Team.ENEMY or not _is_living(target):
+		return false
+
+	action_in_progress = true
+	_append_combat_log("Jukain begins Replica Form Chain on %s." % target.display_name)
+	var completed_hits := 0
+	for hit_index: int in jukain_chain_slots.size():
+		if battle_result != BattleResult.NONE or not _is_living(target):
+			break
+		var damage: int = jukain_state.get_effective_atk(jukain_unit.atk)
+		var hp_before: int = target.current_hp
+		target.current_hp = maxi(0, target.current_hp - damage)
+		if target.current_hp == 0:
+			target.defeated = true
+		completed_hits += 1
+		_append_combat_log("Hit %d — Scythe: %d Slash." % [hit_index + 1, damage])
+		_append_combat_log("%s: %d → %d HP." % [target.display_name, hp_before, target.current_hp])
+		if target.defeated:
+			_clear_burn(target)
+			_append_combat_log("%s is defeated." % target.display_name)
+			if _check_battle_result():
+				action_in_progress = false
+				return true
+			_append_combat_log("Replica Form Chain stops: target defeated.")
+			break
+
+	if completed_hits == 4:
+		_append_combat_log("Replica Form Chain complete.")
+	_clear_jukain_chain_selection()
+	_render_battlefield()
+	_finish_completed_action(jukain_unit)
 	return true
 
 
@@ -422,6 +571,7 @@ func select_hiruko_skill_target(target_id: StringName) -> bool:
 func resolve_enemy_turn() -> bool:
 	if (
 		action_in_progress
+		or _is_jukain_chain_selection_active()
 		or selecting_target
 		or selecting_move
 		or selecting_skill
@@ -541,6 +691,39 @@ func _process_jukain_turn_start() -> StringName:
 
 func _is_living(unit: BattleUnit) -> bool:
 	return not unit.defeated and unit.current_hp > 0
+
+
+func _can_begin_jukain_form_chain() -> bool:
+	return (
+		not action_in_progress
+		and battle_result == BattleResult.NONE
+		and current_unit == jukain_unit
+		and _is_living(jukain_unit)
+		and jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED
+		and not selecting_target
+		and not selecting_move
+		and not selecting_skill
+		and selected_hiruko_skill == HirukoSkill.NONE
+		and ally_attack_confirmation_target_id == &""
+		and not _is_jukain_chain_selection_active()
+	)
+
+
+func _get_valid_jukain_chain_targets() -> Array[BattleUnit]:
+	var targets: Array[BattleUnit] = []
+	if jukain_unit == null or not _is_living(jukain_unit):
+		return targets
+	var nearest_line := _get_nearest_occupied_line(BattleUnitModel.Team.ENEMY)
+	if nearest_line < 0:
+		return targets
+	for unit: BattleUnit in enemy_units:
+		if unit.line == nearest_line and _is_living(unit):
+			targets.append(unit)
+	targets.sort_custom(
+		func(first: BattleUnit, second: BattleUnit) -> bool:
+			return String(first.stable_id) < String(second.stable_id)
+	)
+	return targets
 
 
 func _get_nearest_occupied_line(team: BattleUnit.Team) -> int:
@@ -700,7 +883,9 @@ func _commit_basic_attack(
 		if jukain_prescript.record_hiruko_hp_loss(
 			hiruko_source, target_hp_before, target.current_hp
 		):
-			_append_combat_log("Prescript resolved: %s." % jukain_prescript.get_route_label())
+			var route: String = jukain_prescript.get_route_label()
+			_append_combat_log("Prescript resolved: %s." % route)
+			_unlock_jukain_from_prescript(route)
 	elif (
 		target == jukain_unit
 		and attacker.team == BattleUnitModel.Team.ENEMY
@@ -710,10 +895,29 @@ func _commit_basic_attack(
 	):
 		_append_combat_log("Replacement complete.")
 		_append_combat_log("Prescript resolved: DEFY.")
+		_unlock_jukain_from_prescript("DEFY")
 
 	_clear_action_selection()
 	_render_battlefield()
 	_finish_completed_action(attacker)
+	return true
+
+
+func _unlock_jukain_from_prescript(route: String) -> bool:
+	if (
+		jukain_state == null
+		or jukain_prescript == null
+		or not jukain_prescript.is_resolved()
+		or route not in ["OBEY", "EXPLOIT", "DEFY"]
+	):
+		return false
+	if not jukain_state.unlock():
+		return false
+	_append_combat_log("Jukain unlocks after %s." % route)
+	_append_combat_log(
+		"Effective ATK restored to %d." % jukain_state.get_effective_atk(jukain_unit.atk)
+	)
+	_append_combat_log("Replica Form Chain is now available.")
 	return true
 
 
@@ -1070,8 +1274,20 @@ func _clear_target_selection() -> void:
 	ally_attack_confirmation_target_id = &""
 
 
+func _clear_jukain_chain_selection() -> void:
+	selecting_jukain_chain_target = false
+	valid_jukain_chain_targets.clear()
+	jukain_chain_target_id = &""
+	jukain_chain_slots.clear()
+
+
+func _is_jukain_chain_selection_active() -> bool:
+	return selecting_jukain_chain_target or jukain_chain_target_id != &""
+
+
 func _clear_action_selection() -> void:
 	_clear_target_selection()
+	_clear_jukain_chain_selection()
 	selecting_move = false
 	valid_move_destinations.clear()
 	selecting_skill = false
@@ -1098,10 +1314,16 @@ func _refresh_turn_ui() -> void:
 
 func _refresh_action_ui() -> void:
 	attack_button.hide()
+	form_chain_button.hide()
 	skill_button.hide()
 	move_button.hide()
 	cancel_button.hide()
 	confirm_ally_attack_button.hide()
+	chain_slots_label.hide()
+	scythe_form_button.hide()
+	undo_chain_button.hide()
+	execute_chain_button.hide()
+	execute_chain_button.disabled = true
 	kick_skill_button.hide()
 	gut_stab_skill_button.hide()
 	skill_back_button.hide()
@@ -1117,6 +1339,22 @@ func _refresh_action_ui() -> void:
 	elif current_unit == null:
 		action_mode_label.text = "No current actor"
 		status_label.text = "Turn engine paused."
+	elif selecting_jukain_chain_target:
+		action_mode_label.text = "Form Chain — Select Target"
+		cancel_button.show()
+		status_label.text = "Choose a marked enemy for the complete chain or cancel."
+	elif jukain_chain_target_id != &"":
+		action_mode_label.text = "Build Replica Form Chain"
+		chain_slots_label.text = _get_jukain_chain_slots_text()
+		chain_slots_label.show()
+		scythe_form_button.show()
+		scythe_form_button.disabled = jukain_chain_slots.size() >= 4
+		undo_chain_button.show()
+		undo_chain_button.disabled = jukain_chain_slots.is_empty()
+		execute_chain_button.show()
+		execute_chain_button.disabled = jukain_chain_slots.size() != 4
+		cancel_button.show()
+		status_label.text = "Select Scythe once per slot, then execute the four-hit chain."
 	elif ally_attack_confirmation_target_id != &"":
 		action_mode_label.text = "Confirm Ally Attack"
 		confirm_ally_attack_button.show()
@@ -1148,15 +1386,42 @@ func _refresh_action_ui() -> void:
 		attack_button.show()
 		if current_unit == hiruko_unit:
 			skill_button.show()
+		elif (
+			current_unit == jukain_unit
+			and jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED
+		):
+			form_chain_button.show()
 		move_button.show()
 		status_label.text = (
 			"Hiruko's turn — Attack, Skill, or Move."
 			if current_unit == hiruko_unit
-			else "Party turn — Attack or move."
+			else (
+				"Jukain's turn — Attack, Form Chain, or Move."
+				if current_unit == jukain_unit
+				and jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED
+				else "Party turn — Attack or move."
+			)
 		)
 	else:
 		action_mode_label.text = "Enemy turn resolving…"
 		status_label.text = "Enemy Basic Attack resolves automatically."
+
+
+func _get_jukain_chain_slots_text() -> String:
+	var slot_labels: PackedStringArray = []
+	for slot_index: int in 4:
+		var form_label := "—"
+		if slot_index < jukain_chain_slots.size():
+			form_label = _jukain_replica_form_label(jukain_chain_slots[slot_index])
+		slot_labels.append("Hit %d: %s" % [slot_index + 1, form_label])
+	return "  |  ".join(slot_labels)
+
+
+func _jukain_replica_form_label(form: JukainReplicaForm) -> String:
+	match form:
+		JukainReplicaForm.SCYTHE:
+			return "Scythe"
+	return "Unknown"
 
 
 func _hiruko_skill_label(skill: HirukoSkill) -> String:
@@ -1219,6 +1484,7 @@ func _render_battlefield() -> void:
 func select_inspector_unit(unit_id: StringName) -> bool:
 	if (
 		action_in_progress
+		or _is_jukain_chain_selection_active()
 		or selecting_target
 		or selecting_move
 		or selecting_skill
@@ -1323,7 +1589,13 @@ func _get_jukain_inspector_text() -> String:
 			lines.append("RESOLVED: %s  •  KARMA: %d" % [
 				jukain_prescript.get_route_label(), jukain_prescript.karma_stacks
 			])
-	lines.append("UNLOCK INTEGRATION: M5.3  •  FORM CHAIN: NOT AVAILABLE")
+	lines.append(
+		"FORM CHAIN: %s" % (
+			"AVAILABLE"
+			if jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED
+			else "UNAVAILABLE"
+		)
+	)
 	return "\n".join(lines)
 
 
@@ -1526,6 +1798,8 @@ func _on_unit_card_input(event: InputEvent, unit_id: StringName) -> void:
 		get_viewport().set_input_as_handled()
 		if selected_hiruko_skill != HirukoSkill.NONE:
 			select_hiruko_skill_target(unit_id)
+		elif selecting_jukain_chain_target:
+			select_jukain_chain_target(unit_id)
 		elif selecting_target:
 			select_attack_target(unit_id)
 		elif not selecting_move and not selecting_skill and ally_attack_confirmation_target_id == &"":
@@ -1533,6 +1807,8 @@ func _on_unit_card_input(event: InputEvent, unit_id: StringName) -> void:
 
 
 func _is_current_target_choice(unit: BattleUnit) -> bool:
+	if selecting_jukain_chain_target:
+		return _contains_unit(valid_jukain_chain_targets, unit)
 	if selecting_target:
 		return _contains_unit(valid_attack_targets, unit)
 	if selected_hiruko_skill != HirukoSkill.NONE:

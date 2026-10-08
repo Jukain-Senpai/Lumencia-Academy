@@ -20,7 +20,7 @@ func _run() -> void:
 	await _test_locked_and_unlocked_basic_attack()
 	await _test_debug_controls_and_restart()
 	await _test_generic_and_hiruko_regression()
-	await _test_absent_future_mechanics()
+	await _test_locked_form_chain_boundary()
 	await _test_victory_and_defeat()
 	await _test_layout_and_five_card_capacity()
 
@@ -145,14 +145,13 @@ func _test_generic_and_hiruko_regression() -> void:
 	await _free_scene(scene)
 
 
-func _test_absent_future_mechanics() -> void:
+func _test_locked_form_chain_boundary() -> void:
 	var scene := await _new_scene(false)
 	if scene == null:
 		return
 	_check(scene.select_inspector_unit(&"party_2"), "Jukain inspector could not be selected")
-	_check("UNLOCK INTEGRATION: M5.3" in scene.get_node("%InspectorDetailsLabel").text, "M5.2 does not preserve the M5.3 unlock boundary")
-	_check("FORM CHAIN: NOT AVAILABLE" in scene.get_node("%InspectorDetailsLabel").text, "Form Chain absence is not explicit")
-	_check(scene.get_node_or_null("%FormChainButton") == null, "A functional Form Chain control exists in M5.1")
+	_check("FORM CHAIN: UNAVAILABLE" in scene.get_node("%InspectorDetailsLabel").text, "Locked Form Chain unavailability is not explicit")
+	_check(scene.get_node_or_null("%FormChainButton") != null and not scene.get_node("%FormChainButton").visible, "Locked Jukain exposes a usable Form Chain control")
 	await _free_scene(scene)
 
 

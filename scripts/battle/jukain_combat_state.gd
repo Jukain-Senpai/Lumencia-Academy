@@ -19,6 +19,10 @@ func reset() -> void:
 
 
 func debug_unlock() -> bool:
+	return unlock()
+
+
+func unlock() -> bool:
 	if current_state == State.UNLOCKED:
 		return false
 	current_state = State.UNLOCKED

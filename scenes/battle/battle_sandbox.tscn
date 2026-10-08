@@ -92,7 +92,7 @@ theme_override_constants/separation = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
 theme_override_font_sizes/font_size = 26
-text = "M5.2  •  Prototype Prescript & Character Inspector"
+text = "M5.3  •  Prescript Unlock & Base Replica Form Chain"
 
 [node name="Subtitle" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
@@ -431,6 +431,15 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 9
 text = "Reset Jukain — DEBUG"
 
+[node name="ChainSlotsLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.82, 0.88, 1)
+theme_override_font_sizes/font_size = 10
+text = "Hit 1: —  |  Hit 2: —  |  Hit 3: —  |  Hit 4: —"
+autowrap_mode = 2
+
 [node name="ActionRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
 layout_mode = 2
 theme_override_constants/separation = 6
@@ -448,6 +457,13 @@ layout_mode = 2
 focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
 text = "Attack"
+
+[node name="FormChainButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Form Chain"
 
 [node name="SkillButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true
@@ -476,6 +492,28 @@ layout_mode = 2
 focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
 text = "Confirm"
+
+[node name="ScytheFormButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Scythe"
+
+[node name="UndoChainButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Undo"
+
+[node name="ExecuteChainButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+disabled = true
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Execute Chain"
 
 [node name="KickSkillButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true

@@ -138,7 +138,7 @@ func _test_obey_confirmation_and_pipeline() -> void:
 	_check(scene.hiruko_state.chains_current == 99 and scene.hiruko_state.wrapper_current == 100, "Obey bypassed Hiruko's M4 Seal pipeline")
 	_check(scene.jukain_prescript.phase == JukainPrescriptStateModel.Phase.RESOLVED_OBEY and scene.jukain_prescript.get_route_label() == "OBEY", "Obey route did not resolve")
 	_check(scene.jukain_prescript.karma_stacks == 0, "Obey incorrectly added Karma")
-	_check(scene.jukain_state.get_state() == JukainCombatStateModel.State.LOCKED and scene.jukain_unit.atk == 9, "Obey unlocked Jukain or overwrote real ATK")
+	_check(scene.jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED and scene.jukain_state.get_effective_atk(scene.jukain_unit.atk) == 9 and scene.jukain_unit.atk == 9, "Obey did not apply the M5.3 unlock while preserving real ATK")
 	_check(_log_contains(scene, "Prescript resolved: OBEY."), "Obey resolution was not logged")
 	await _free_scene(scene)
 
@@ -158,7 +158,7 @@ func _test_exploit_route() -> void:
 	_check(scene.hiruko_unit.current_hp < hp_before, "Enemy did not actually damage Hiruko")
 	_check(scene.jukain_prescript.phase == JukainPrescriptStateModel.Phase.RESOLVED_EXPLOIT, "Exploit route did not resolve")
 	_check(scene.jukain_prescript.karma_stacks == 0, "Exploit incorrectly added Karma")
-	_check(scene.jukain_state.get_state() == JukainCombatStateModel.State.LOCKED, "Exploit implemented M5.3 unlock")
+	_check(scene.jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED, "Exploit did not apply the M5.3 unlock")
 	_check(_log_contains(scene, "Hiruko is exposed.") and _log_contains(scene, "Prescript resolved: EXPLOIT."), "Exploit log is incomplete")
 	await _free_scene(scene)
 
@@ -190,7 +190,7 @@ func _test_defy_karma_and_replacement() -> void:
 	_check(hp_before - scene.jukain_unit.current_hp == 11, "Karma 1 did not apply ceiling-scaled ×1.20 enemy damage")
 	_check(scene.jukain_prescript.phase == JukainPrescriptStateModel.Phase.RESOLVED_DEFY, "Enemy HP loss did not complete DEFY replacement")
 	_check(scene.jukain_prescript.karma_stacks == 1, "Karma did not persist after replacement")
-	_check(scene.jukain_state.get_state() == JukainCombatStateModel.State.LOCKED, "DEFY replacement implemented M5.3 unlock")
+	_check(scene.jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED, "DEFY replacement did not apply the M5.3 unlock")
 	_check(_log_contains(scene, "Replacement complete.") and _log_contains(scene, "Prescript resolved: DEFY."), "DEFY completion log is incomplete")
 
 	scene = await _replace_scene(scene, false)
