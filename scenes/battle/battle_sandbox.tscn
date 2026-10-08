@@ -92,12 +92,12 @@ theme_override_constants/separation = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
 theme_override_font_sizes/font_size = 28
-text = "M3.2  •  Round & Turn Queue Sandbox"
+text = "M3.3  •  Basic Attack Sandbox"
 
 [node name="Subtitle" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
-text = "Deterministic turn-engine test — no actions, targeting, or damage"
+text = "Nearest-line targeting and deterministic Basic Attacks — no Move yet"
 
 [node name="RestartButton" type="Button" parent="Margin/Layout/Header"]
 unique_name_in_owner = true
@@ -348,12 +348,37 @@ size_flags_vertical = 3
 text = "—"
 autowrap_mode = 2
 
-[node name="AdvanceTurnButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
+[node name="ActionRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ActionModeLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
+text = "Preparing actions…"
+
+[node name="AttackButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
-text = "Advance Turn  [DEBUG]"
+text = "Attack"
+
+[node name="CancelButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Cancel"
+
+[node name="ResolveEnemyTurnButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Resolve Enemy Turn — DEBUG"
 
 [node name="LogColumn" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
 layout_mode = 2
