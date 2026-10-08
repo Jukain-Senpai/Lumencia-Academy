@@ -92,12 +92,12 @@ theme_override_constants/separation = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
 theme_override_font_sizes/font_size = 26
-text = "M4.3  •  Hiruko Burn & Laevatain Aura"
+text = "M4.4  •  Hiruko Skills & Frontline Techniques"
 
 [node name="Subtitle" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
-text = "Test Burn ticks, fiery sword attacks, and Laevatain's all-combatant aura"
+text = "Test Kick, Gut Stab, forward movement, and state-dependent sword follow-ups"
 
 [node name="RestartButton" type="Button" parent="Margin/Layout/Header"]
 unique_name_in_owner = true
@@ -474,6 +474,13 @@ focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
 text = "Attack"
 
+[node name="SkillButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Skill"
+
 [node name="MoveButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -487,6 +494,27 @@ layout_mode = 2
 focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
 text = "Cancel"
+
+[node name="KickSkillButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Kick"
+
+[node name="GutStabSkillButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Gut Stab"
+
+[node name="SkillBackButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Back"
 
 [node name="MoveFrontButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true

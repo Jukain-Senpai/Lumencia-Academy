@@ -16,6 +16,12 @@ enum BattleResult {
 	DEFEAT,
 }
 
+enum HirukoSkill {
+	NONE,
+	KICK,
+	GUT_STAB,
+}
+
 # Temporary sandbox fixtures. Hiruko retains Party 1's M3 values; none are final balance.
 const PARTY_FIXTURES: Array[Dictionary] = [
 	{"id": "party_1", "name": "Hiruko", "team": BattleUnitModel.Team.PARTY, "current_hp": 44, "max_hp": 44, "atk": 10, "spd": 14, "line": BattleUnitModel.Line.FRONT, "defeated": false},
@@ -35,8 +41,12 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 
 @onready var restart_button: Button = %RestartButton
 @onready var attack_button: Button = %AttackButton
+@onready var skill_button: Button = %SkillButton
 @onready var move_button: Button = %MoveButton
 @onready var cancel_button: Button = %CancelButton
+@onready var kick_skill_button: Button = %KickSkillButton
+@onready var gut_stab_skill_button: Button = %GutStabSkillButton
+@onready var skill_back_button: Button = %SkillBackButton
 @onready var move_front_button: Button = %MoveFrontButton
 @onready var move_mid_button: Button = %MoveMidButton
 @onready var move_back_button: Button = %MoveBackButton
@@ -67,6 +77,9 @@ var selecting_target := false
 var valid_attack_targets: Array[BattleUnit] = []
 var selecting_move := false
 var valid_move_destinations: Array[int] = []
+var selecting_skill := false
+var selected_hiruko_skill: HirukoSkill = HirukoSkill.NONE
+var valid_skill_targets: Array[BattleUnit] = []
 var action_in_progress := false
 var battle_result: BattleResult = BattleResult.NONE
 var automatic_enemy_turns_enabled := true
@@ -81,8 +94,12 @@ var laevatain_aura_turn_token := ""
 func _ready() -> void:
 	restart_button.pressed.connect(restart_battle)
 	attack_button.pressed.connect(begin_attack_selection)
+	skill_button.pressed.connect(begin_skill_selection)
 	move_button.pressed.connect(begin_move_selection)
 	cancel_button.pressed.connect(cancel_action_selection)
+	kick_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.KICK))
+	gut_stab_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.GUT_STAB))
+	skill_back_button.pressed.connect(back_from_skill_menu)
 	move_front_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.FRONT))
 	move_mid_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.MID))
 	move_back_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.BACK))
@@ -118,8 +135,12 @@ func restart_battle() -> void:
 	_start_round()
 	restart_button.release_focus()
 	attack_button.release_focus()
+	skill_button.release_focus()
 	move_button.release_focus()
 	cancel_button.release_focus()
+	kick_skill_button.release_focus()
+	gut_stab_skill_button.release_focus()
+	skill_back_button.release_focus()
 	move_front_button.release_focus()
 	move_mid_button.release_focus()
 	move_back_button.release_focus()
@@ -178,6 +199,8 @@ func advance_turn() -> void:
 func begin_attack_selection() -> bool:
 	if (
 		action_in_progress
+		or selecting_skill
+		or selected_hiruko_skill != HirukoSkill.NONE
 		or battle_result != BattleResult.NONE
 		or current_unit == null
 		or current_unit.team != BattleUnitModel.Team.PARTY
@@ -199,13 +222,27 @@ func begin_attack_selection() -> bool:
 
 
 func cancel_target_selection() -> bool:
-	if not selecting_target or action_in_progress:
+	if (
+		(not selecting_target and selected_hiruko_skill == HirukoSkill.NONE)
+		or action_in_progress
+	):
 		return false
 	return cancel_action_selection()
 
 
 func cancel_action_selection() -> bool:
-	if (not selecting_target and not selecting_move) or action_in_progress:
+	if action_in_progress:
+		return false
+	if selected_hiruko_skill != HirukoSkill.NONE:
+		selected_hiruko_skill = HirukoSkill.NONE
+		valid_skill_targets.clear()
+		selecting_skill = true
+		_render_battlefield()
+		_refresh_action_ui()
+		return true
+	if selecting_skill:
+		return back_from_skill_menu()
+	if not selecting_target and not selecting_move:
 		return false
 	_clear_target_selection()
 	selecting_move = false
@@ -218,6 +255,8 @@ func cancel_action_selection() -> bool:
 func begin_move_selection() -> bool:
 	if (
 		action_in_progress
+		or selecting_skill
+		or selected_hiruko_skill != HirukoSkill.NONE
 		or battle_result != BattleResult.NONE
 		or current_unit == null
 		or current_unit.team != BattleUnitModel.Team.PARTY
@@ -228,6 +267,55 @@ func begin_move_selection() -> bool:
 	_clear_action_selection()
 	valid_move_destinations = get_adjacent_lines(current_unit.line)
 	selecting_move = true
+	_refresh_action_ui()
+	return true
+
+
+func begin_skill_selection() -> bool:
+	if (
+		action_in_progress
+		or battle_result != BattleResult.NONE
+		or current_unit != hiruko_unit
+		or not _is_living(hiruko_unit)
+		or selecting_target
+		or selecting_move
+		or selecting_skill
+		or selected_hiruko_skill != HirukoSkill.NONE
+	):
+		return false
+	selecting_skill = true
+	_refresh_action_ui()
+	return true
+
+
+func back_from_skill_menu() -> bool:
+	if action_in_progress or not selecting_skill:
+		return false
+	selecting_skill = false
+	selected_hiruko_skill = HirukoSkill.NONE
+	valid_skill_targets.clear()
+	_render_battlefield()
+	_refresh_action_ui()
+	return true
+
+
+func select_hiruko_skill(skill: HirukoSkill) -> bool:
+	if (
+		action_in_progress
+		or not selecting_skill
+		or current_unit != hiruko_unit
+		or not _is_living(hiruko_unit)
+		or skill not in [HirukoSkill.KICK, HirukoSkill.GUT_STAB]
+	):
+		return false
+	var targets := _get_valid_attack_targets(hiruko_unit)
+	if targets.is_empty():
+		_check_battle_result()
+		return false
+	selecting_skill = false
+	selected_hiruko_skill = skill
+	valid_skill_targets = targets
+	_render_battlefield()
 	_refresh_action_ui()
 	return true
 
@@ -251,11 +339,26 @@ func select_attack_target(target_id: StringName) -> bool:
 	return _commit_basic_attack(current_unit, target)
 
 
+func select_hiruko_skill_target(target_id: StringName) -> bool:
+	if (
+		action_in_progress
+		or selected_hiruko_skill == HirukoSkill.NONE
+		or current_unit != hiruko_unit
+	):
+		return false
+	var target := _find_unit_by_id(target_id)
+	if target == null or not _contains_unit(valid_skill_targets, target):
+		return false
+	return _commit_hiruko_skill(selected_hiruko_skill, target)
+
+
 func resolve_enemy_turn() -> bool:
 	if (
 		action_in_progress
 		or selecting_target
 		or selecting_move
+		or selecting_skill
+		or selected_hiruko_skill != HirukoSkill.NONE
 		or battle_result != BattleResult.NONE
 		or current_unit == null
 		or current_unit.team != BattleUnitModel.Team.ENEMY
@@ -507,6 +610,117 @@ func _commit_move(unit: BattleUnit, destination: int) -> bool:
 	return true
 
 
+func _commit_hiruko_skill(skill: HirukoSkill, target: BattleUnit) -> bool:
+	if action_in_progress or skill not in [HirukoSkill.KICK, HirukoSkill.GUT_STAB]:
+		return false
+	if hiruko_unit != current_unit or not _is_living(hiruko_unit) or target == null:
+		return false
+	if not _contains_unit(valid_skill_targets, target):
+		return false
+	if not _contains_unit(_get_valid_attack_targets(hiruko_unit), target):
+		return false
+
+	action_in_progress = true
+	_clear_action_selection()
+	if skill == HirukoSkill.KICK:
+		_resolve_hiruko_kick(target)
+	else:
+		_resolve_hiruko_gut_stab(target)
+	_render_battlefield()
+	_finish_completed_action(hiruko_unit)
+	return true
+
+
+func _resolve_hiruko_kick(target: BattleUnit) -> void:
+	var kick_damage := maxi(0, hiruko_unit.atk)
+	_append_combat_log("Hiruko uses Kick on %s." % target.display_name)
+	_apply_hiruko_skill_damage(target, kick_damage)
+	_append_combat_log(
+		"Hiruko kicks %s for %d Blunt damage." % [target.display_name, kick_damage]
+	)
+	_advance_hiruko_toward_front()
+	_log_skill_target_result(target)
+
+
+func _resolve_hiruko_gut_stab(target: BattleUnit) -> void:
+	var kick_damage := maxi(0, hiruko_unit.atk)
+	var sword_state: HirukoCombatStateModel.State = hiruko_state.get_state()
+	_append_combat_log("Hiruko uses Gut Stab on %s." % target.display_name)
+	_apply_hiruko_skill_damage(target, kick_damage)
+	_append_combat_log(
+		"Gut Stab Kick hits %s for %d Blunt damage." % [target.display_name, kick_damage]
+	)
+	_advance_hiruko_toward_front()
+	_render_battlefield()
+	if target.defeated:
+		_clear_burn(target)
+		_append_combat_log("%s is defeated by the Kick." % target.display_name)
+		return
+
+	_append_combat_log(
+		"%s has %d HP remaining after the Kick." % [target.display_name, target.current_hp]
+	)
+	var sword_damage: int = hiruko_state.get_basic_attack_damage(hiruko_unit.atk, sword_state)
+	var sword_type: String = hiruko_state.get_basic_attack_type_label(sword_state)
+	_apply_hiruko_skill_damage(target, sword_damage)
+	_append_combat_log(
+		"Gut Stab sword follow-up hits %s for %d %s damage." % [
+			target.display_name,
+			sword_damage,
+			sword_type.capitalize(),
+		]
+	)
+	if target.defeated:
+		_clear_burn(target)
+		_append_combat_log("%s is defeated by the sword follow-up." % target.display_name)
+		return
+
+	_append_combat_log("%s has %d HP remaining." % [target.display_name, target.current_hp])
+	if sword_state != HirukoCombatStateModel.State.SEALED:
+		var burn_was_active := _get_burn_ticks(target) > 0
+		_apply_burn(target)
+		_append_combat_log(
+			"Hiruko's sword %s Burn on %s (2 ticks)." % [
+				"refreshes" if burn_was_active else "applies",
+				target.display_name,
+			]
+		)
+
+
+func _apply_hiruko_skill_damage(target: BattleUnit, damage: int) -> void:
+	target.current_hp = maxi(0, target.current_hp - maxi(0, damage))
+	if target.current_hp == 0:
+		target.defeated = true
+
+
+func _advance_hiruko_toward_front() -> void:
+	var origin: BattleUnit.Line = hiruko_unit.line
+	match hiruko_unit.line:
+		BattleUnitModel.Line.BACK:
+			hiruko_unit.line = BattleUnitModel.Line.MID
+		BattleUnitModel.Line.MID:
+			hiruko_unit.line = BattleUnitModel.Line.FRONT
+		BattleUnitModel.Line.FRONT:
+			pass
+	if hiruko_unit.line == origin:
+		_append_combat_log("Hiruko holds the Front line.")
+	else:
+		_append_combat_log(
+			"Hiruko advances from %s to %s." % [
+				BattleUnitModel.line_name(origin),
+				BattleUnitModel.line_name(hiruko_unit.line),
+			]
+		)
+
+
+func _log_skill_target_result(target: BattleUnit) -> void:
+	if target.defeated:
+		_clear_burn(target)
+		_append_combat_log("%s is defeated." % target.display_name)
+	else:
+		_append_combat_log("%s has %d HP remaining." % [target.display_name, target.current_hp])
+
+
 func _finish_completed_action(actor: BattleUnit) -> void:
 	# Direct actions own the first result check. A terminal hit never grants the
 	# acting unit a post-battle Burn tick.
@@ -701,6 +915,9 @@ func _clear_action_selection() -> void:
 	_clear_target_selection()
 	selecting_move = false
 	valid_move_destinations.clear()
+	selecting_skill = false
+	selected_hiruko_skill = HirukoSkill.NONE
+	valid_skill_targets.clear()
 
 
 func _append_combat_log(message: String) -> void:
@@ -721,8 +938,12 @@ func _refresh_turn_ui() -> void:
 
 func _refresh_action_ui() -> void:
 	attack_button.hide()
+	skill_button.hide()
 	move_button.hide()
 	cancel_button.hide()
+	kick_skill_button.hide()
+	gut_stab_skill_button.hide()
+	skill_back_button.hide()
 	move_front_button.hide()
 	move_mid_button.hide()
 	move_back_button.hide()
@@ -739,6 +960,10 @@ func _refresh_action_ui() -> void:
 		action_mode_label.text = "Attack — Select Target"
 		cancel_button.show()
 		status_label.text = "Choose a marked target or cancel."
+	elif selected_hiruko_skill != HirukoSkill.NONE:
+		action_mode_label.text = "%s — Select Target" % _hiruko_skill_label(selected_hiruko_skill)
+		cancel_button.show()
+		status_label.text = "Choose a marked target or cancel back to Skills."
 	elif selecting_move:
 		action_mode_label.text = "Move — Select Line"
 		cancel_button.show()
@@ -746,14 +971,35 @@ func _refresh_action_ui() -> void:
 		move_mid_button.visible = BattleUnitModel.Line.MID in valid_move_destinations
 		move_back_button.visible = BattleUnitModel.Line.BACK in valid_move_destinations
 		status_label.text = "Choose an adjacent line or cancel."
+	elif selecting_skill:
+		action_mode_label.text = "Choose Skill"
+		kick_skill_button.show()
+		gut_stab_skill_button.show()
+		skill_back_button.show()
+		status_label.text = "Kick advances; Gut Stab follows with the sword."
 	elif current_unit.team == BattleUnitModel.Team.PARTY:
 		action_mode_label.text = "Choose action"
 		attack_button.show()
+		if current_unit == hiruko_unit:
+			skill_button.show()
 		move_button.show()
-		status_label.text = "Party turn — Attack or move."
+		status_label.text = (
+			"Hiruko's turn — Attack, Skill, or Move."
+			if current_unit == hiruko_unit
+			else "Party turn — Attack or move."
+		)
 	else:
 		action_mode_label.text = "Enemy turn resolving…"
 		status_label.text = "Enemy Basic Attack resolves automatically."
+
+
+func _hiruko_skill_label(skill: HirukoSkill) -> String:
+	match skill:
+		HirukoSkill.KICK:
+			return "Kick"
+		HirukoSkill.GUT_STAB:
+			return "Gut Stab"
+	return "Skill"
 
 
 func _build_units(fixtures: Array[Dictionary], expected_team: BattleUnit.Team) -> Array[BattleUnit]:
@@ -903,7 +1149,7 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	if unit.defeated:
 		style.bg_color = Color("242832")
 		style.border_color = Color("5c626d")
-	elif selecting_target and _contains_unit(valid_attack_targets, unit):
+	elif _is_current_target_choice(unit):
 		style.border_color = Color("f2c879")
 		style.set_border_width_all(4)
 	style.set_corner_radius_all(8)
@@ -937,12 +1183,12 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	if unit.defeated:
 		state_label.text = "DEFEATED"
 		state_label.add_theme_color_override("font_color", Color("d4858f"))
-	elif selecting_target and _contains_unit(valid_attack_targets, unit):
+	elif _is_current_target_choice(unit):
 		state_label.text = "SELECT"
 		if burn_ticks > 0:
 			state_label.text += " [BURN %d]" % burn_ticks
 		state_label.add_theme_color_override("font_color", Color("f2c879"))
-		card.tooltip_text += "\nClick to attack %s" % unit.display_name
+		card.tooltip_text += "\nClick to target %s" % unit.display_name
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		card.mouse_filter = Control.MOUSE_FILTER_STOP
 		card.gui_input.connect(_on_target_card_input.bind(unit.stable_id))
@@ -994,4 +1240,15 @@ func _on_target_card_input(event: InputEvent, target_id: StringName) -> void:
 		and event.pressed
 	):
 		get_viewport().set_input_as_handled()
-		select_attack_target(target_id)
+		if selected_hiruko_skill != HirukoSkill.NONE:
+			select_hiruko_skill_target(target_id)
+		else:
+			select_attack_target(target_id)
+
+
+func _is_current_target_choice(unit: BattleUnit) -> bool:
+	if selecting_target:
+		return _contains_unit(valid_attack_targets, unit)
+	if selected_hiruko_skill != HirukoSkill.NONE:
+		return _contains_unit(valid_skill_targets, unit)
+	return false
