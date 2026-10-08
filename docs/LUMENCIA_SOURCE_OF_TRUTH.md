@@ -716,19 +716,25 @@ Do not wait for final art before testing gameplay.
 
 ## 13. Current Priority
 
-The next development task is **Milestone 0**.
+Milestones 0–2 are complete.
 
-Do not begin by implementing the full combat system.
+The current development task is **Milestone 3 — Combat Sandbox**.
 
-First:
+Build the combat foundation in isolation before implementing character-specific mechanics.
 
-1. Create the Godot project.
-2. Create Git repository.
-3. Add project folders.
-4. Add this document to `docs/`.
-5. Build the smallest possible VN prototype.
+Current priorities:
 
-After the VN prototype works, create the isolated combat sandbox.
+1. Create an isolated battle test scene.
+2. Support all 6 party members.
+3. Implement Front / Mid / Back positioning.
+4. Implement basic turn order, HP, Attack, targeting, and damage.
+5. Allow movement between combat lines.
+6. Add a simple combat log.
+7. Implement win / lose conditions.
+
+Do not integrate VN/story state yet.
+
+Do not implement Hiruko's Seal mechanics or Jukain's Prescript / Replica mechanics until the generic combat sandbox is reliable.
 
 ---
 
