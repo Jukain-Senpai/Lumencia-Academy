@@ -7,6 +7,8 @@ const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_stat
 const UNIT_CARD_HEIGHT := 44.0
 const UNIT_CARD_GAP := 2.0
 const HIRUKO_UNIT_ID: StringName = &"party_1"
+const BURN_DAMAGE := 5
+const BURN_DURATION_TICKS := 2
 
 enum BattleResult {
 	NONE,
@@ -72,6 +74,8 @@ var enemy_action_pending := false
 var battle_generation := 0
 var hiruko_unit: BattleUnit = null
 var hiruko_state: RefCounted = null
+var burn_remaining_ticks_by_unit_id: Dictionary = {}
+var laevatain_aura_turn_token := ""
 
 
 func _ready() -> void:
@@ -276,6 +280,8 @@ func _reset_turn_state() -> void:
 	action_in_progress = false
 	battle_result = BattleResult.NONE
 	enemy_action_pending = false
+	burn_remaining_ticks_by_unit_id.clear()
+	laevatain_aura_turn_token = ""
 	combat_log_label.clear()
 	_refresh_turn_ui()
 
@@ -325,11 +331,14 @@ func _activate_next_living_turn() -> void:
 		turn_index += 1
 		var candidate := turn_queue[turn_index]
 		if not _is_living(candidate):
+			_clear_burn(candidate)
 			_append_combat_log("%s is defeated and skips their turn." % candidate.display_name)
 			continue
 
 		current_unit = candidate
 		_append_combat_log("%s's turn." % current_unit.display_name)
+		if _try_apply_hiruko_turn_start_aura():
+			_render_battlefield()
 		_refresh_turn_ui()
 		_schedule_enemy_turn()
 		return
@@ -392,8 +401,10 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 	var hp_damage := raw_damage
 	var attack_type := ""
 	var hiruko_hit: Dictionary = {}
+	var hiruko_attack_state := -1
 
 	if attacker == hiruko_unit:
+		hiruko_attack_state = hiruko_state.get_state()
 		hp_damage = hiruko_state.get_basic_attack_damage(attacker.atk)
 		attack_type = hiruko_state.get_basic_attack_type_label()
 	elif target == hiruko_unit and attacker.team == BattleUnitModel.Team.ENEMY:
@@ -409,6 +420,12 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 	if not hiruko_hit.is_empty():
 		hiruko_hit = hiruko_state.apply_prepared_seal_damage(hiruko_hit)
 		_log_hiruko_incoming_hit(attacker, hiruko_hit)
+		if (
+			hiruko_hit["seal_broke"]
+			and hiruko_hit["state_at_hit_start"] == HirukoCombatStateModel.State.FLAMING_SWORD
+			and hiruko_hit["state_after"] == HirukoCombatStateModel.State.LAEVATAIN
+		):
+			_apply_laevatain_aura("activation")
 	elif attack_type.is_empty():
 		_append_combat_log(
 			"%s attacks %s for %d damage." % [attacker.display_name, target.display_name, hp_damage]
@@ -423,18 +440,26 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 			]
 		)
 	if target.defeated:
+		_clear_burn(target)
 		_append_combat_log("%s is defeated." % target.display_name)
 	else:
 		_append_combat_log("%s has %d HP remaining." % [target.display_name, target.current_hp])
+		if (
+			attacker == hiruko_unit
+			and hiruko_attack_state != HirukoCombatStateModel.State.SEALED
+		):
+			var burn_was_active := _get_burn_ticks(target) > 0
+			_apply_burn(target)
+			_append_combat_log(
+				"Hiruko %s Burn on %s (2 ticks)." % [
+					"refreshes" if burn_was_active else "applies",
+					target.display_name,
+				]
+			)
 
 	_clear_action_selection()
 	_render_battlefield()
-	if _check_battle_result():
-		action_in_progress = false
-		return true
-
-	action_in_progress = false
-	_activate_next_living_turn()
+	_finish_completed_action(attacker)
 	return true
 
 
@@ -478,9 +503,101 @@ func _commit_move(unit: BattleUnit, destination: int) -> bool:
 	])
 	_clear_action_selection()
 	_render_battlefield()
+	_finish_completed_action(unit)
+	return true
+
+
+func _finish_completed_action(actor: BattleUnit) -> void:
+	# Direct actions own the first result check. A terminal hit never grants the
+	# acting unit a post-battle Burn tick.
+	if _check_battle_result():
+		action_in_progress = false
+		return
+
+	_process_burn_tick(actor)
+	_render_battlefield()
+	if _check_battle_result():
+		action_in_progress = false
+		return
+
 	action_in_progress = false
 	_activate_next_living_turn()
+
+
+func _get_burn_ticks(unit: BattleUnit) -> int:
+	if unit == null:
+		return 0
+	return int(burn_remaining_ticks_by_unit_id.get(unit.stable_id, 0))
+
+
+func _apply_burn(unit: BattleUnit) -> bool:
+	if unit == null or not _is_living(unit):
+		return false
+	burn_remaining_ticks_by_unit_id[unit.stable_id] = BURN_DURATION_TICKS
 	return true
+
+
+func _clear_burn(unit: BattleUnit) -> void:
+	if unit != null:
+		burn_remaining_ticks_by_unit_id.erase(unit.stable_id)
+
+
+func _process_burn_tick(unit: BattleUnit) -> bool:
+	var ticks_before := _get_burn_ticks(unit)
+	if ticks_before <= 0:
+		return false
+	if not _is_living(unit):
+		_clear_burn(unit)
+		return false
+
+	unit.current_hp = maxi(0, unit.current_hp - BURN_DAMAGE)
+	var ticks_after := ticks_before - 1
+	_append_combat_log("%s takes %d Burn damage." % [unit.display_name, BURN_DAMAGE])
+	if unit.current_hp == 0:
+		unit.defeated = true
+		_clear_burn(unit)
+		_append_combat_log("%s is defeated by Burn." % unit.display_name)
+	elif ticks_after == 0:
+		_clear_burn(unit)
+		_append_combat_log("Burn expires on %s (%d HP remaining)." % [unit.display_name, unit.current_hp])
+	else:
+		burn_remaining_ticks_by_unit_id[unit.stable_id] = ticks_after
+		_append_combat_log(
+			"%s has Burn %d and %d HP remaining." % [unit.display_name, ticks_after, unit.current_hp]
+		)
+	return true
+
+
+func _try_apply_hiruko_turn_start_aura() -> bool:
+	if (
+		current_unit != hiruko_unit
+		or not _is_living(hiruko_unit)
+		or hiruko_state.get_state() != HirukoCombatStateModel.State.LAEVATAIN
+	):
+		return false
+	var token := "%d:%d:%d" % [battle_generation, round_number, turn_index]
+	if token == laevatain_aura_turn_token:
+		return false
+	laevatain_aura_turn_token = token
+	_apply_laevatain_aura("turn-start")
+	return true
+
+
+func _apply_laevatain_aura(aura_kind: String) -> void:
+	var affected_names: Array[String] = []
+	for unit: BattleUnit in party_units + enemy_units:
+		if unit == hiruko_unit or not _is_living(unit):
+			continue
+		_apply_burn(unit)
+		affected_names.append(unit.display_name)
+	if affected_names.is_empty():
+		return
+	_append_combat_log(
+		"Laevatain %s aura applies/refreshes Burn 2 on %s." % [
+			aura_kind,
+			", ".join(affected_names),
+		]
+	)
 
 
 func get_adjacent_lines(origin: int) -> Array[int]:
@@ -692,7 +809,7 @@ func _refresh_hiruko_ui() -> void:
 		hiruko_state_label.text = "UNAVAILABLE"
 		return
 	hiruko_state_label.text = hiruko_state.get_state_label()
-	hiruko_profile_label.text = hiruko_state.get_profile_label()
+	hiruko_profile_label.text = _get_hiruko_profile_text()
 	hiruko_profile_label.tooltip_text = hiruko_profile_label.text
 	chains_seal_bar.max_value = HirukoCombatStateModel.CHAINS_MAX
 	chains_seal_bar.value = hiruko_state.chains_current
@@ -710,6 +827,15 @@ func _refresh_hiruko_ui() -> void:
 	wrapper_seal_bar.modulate = _seal_tint(
 		hiruko_state.wrapper_current, HirukoCombatStateModel.WRAPPER_MAX
 	)
+
+
+func _get_hiruko_profile_text() -> String:
+	if hiruko_state == null:
+		return "UNAVAILABLE"
+	var profile: String = hiruko_state.get_profile_label()
+	if hiruko_state.get_state() == HirukoCombatStateModel.State.LAEVATAIN:
+		profile += "  •  Aura ACTIVE"
+	return profile
 
 
 func _seal_value_text(current: int, maximum: int) -> String:
@@ -761,8 +887,14 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = Vector2(0, UNIT_CARD_HEIGHT)
 	card.tooltip_text = "Stable ID: %s" % unit.stable_id
+	var burn_ticks := _get_burn_ticks(unit)
+	if burn_ticks > 0:
+		card.tooltip_text += "\nBurn: %d tick(s), %d damage at end of this unit's turn" % [
+			burn_ticks,
+			BURN_DAMAGE,
+		]
 	if unit == hiruko_unit and hiruko_state != null:
-		card.tooltip_text += "\n%s" % hiruko_state.get_profile_label()
+		card.tooltip_text += "\n%s" % _get_hiruko_profile_text()
 
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("243b53") if unit.team == BattleUnitModel.Team.PARTY else Color("4a2837")
@@ -806,15 +938,22 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 		state_label.text = "DEFEATED"
 		state_label.add_theme_color_override("font_color", Color("d4858f"))
 	elif selecting_target and _contains_unit(valid_attack_targets, unit):
-		state_label.text = "SELECT TARGET"
+		state_label.text = "SELECT"
+		if burn_ticks > 0:
+			state_label.text += " [BURN %d]" % burn_ticks
 		state_label.add_theme_color_override("font_color", Color("f2c879"))
-		card.tooltip_text = "Click to attack %s" % unit.display_name
+		card.tooltip_text += "\nClick to attack %s" % unit.display_name
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		card.mouse_filter = Control.MOUSE_FILTER_STOP
 		card.gui_input.connect(_on_target_card_input.bind(unit.stable_id))
 	elif unit == hiruko_unit and hiruko_state != null:
 		state_label.text = hiruko_state.get_state_label()
+		if burn_ticks > 0:
+			state_label.text += " [BURN %d]" % burn_ticks
 		state_label.add_theme_color_override("font_color", Color("f2c879"))
+	elif burn_ticks > 0:
+		state_label.text = "[BURN %d]" % burn_ticks
+		state_label.add_theme_color_override("font_color", Color("f2a65a"))
 	identity_row.add_child(state_label)
 
 	var line_label := Label.new()

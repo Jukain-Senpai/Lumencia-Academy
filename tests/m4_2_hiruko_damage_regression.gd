@@ -111,7 +111,7 @@ func _test_flaming_hits_and_wrapper_break() -> void:
 	_check(scene.hiruko_state.wrapper_current == 0 and scene.hiruko_state.chains_current == 0, "Wrapper-breaking hit did not clamp only Wrapper")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.LAEVATAIN, "Wrapper break did not derive LAEVATAIN")
 	_check(scene.get_node("%HirukoStateLabel").text == "LAEVATAIN" and scene.get_node("%WrapperSealValueLabel").text == "BROKEN", "Natural Wrapper break left stale UI")
-	_check(scene.get_node("%HirukoProfileLabel").text == "DR 0%  •  Basic SLASH ×1.4", "Natural Wrapper break did not update the combat profile")
+	_check(scene.get_node("%HirukoProfileLabel").text == "DR 0%  •  Basic SLASH ×1.4  •  Aura ACTIVE", "Natural Wrapper break did not update the combat profile")
 	_check(scene.combat_log_entries.has("Seal [Wrapper] is broken.") and scene.combat_log_entries.has("Hiruko enters LAEVATAIN."), "Natural Wrapper transition feedback is incomplete")
 	await _free_scene(scene)
 
@@ -146,7 +146,10 @@ func _check_hiruko_basic_attack(chains: int, wrapper: int, expected_damage: int,
 	_check(hp_before - enemy_a.current_hp == expected_damage, "%s Basic Attack dealt incorrect damage" % state_label)
 	_check(scene.hiruko_unit.atk == 10, "%s transition mutated Hiruko's stored ATK" % state_label)
 	_check(scene.combat_log_entries.has("Hiruko attacks Enemy A for %d %s damage." % [expected_damage, type_label]), "%s damage type was not logged" % state_label)
-	_check(not _log_contains(scene, "Burn"), "%s Basic Attack introduced Burn during M4.2" % state_label)
+	if state_label == "SEALED":
+		_check(scene._get_burn_ticks(enemy_a) == 0, "SEALED Basic Attack unexpectedly applied Burn")
+	else:
+		_check(scene._get_burn_ticks(enemy_a) == 2, "%s Basic Attack did not apply M4.3 Burn 2" % state_label)
 	await _free_scene(scene)
 
 
