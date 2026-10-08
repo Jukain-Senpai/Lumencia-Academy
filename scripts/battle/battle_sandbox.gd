@@ -45,6 +45,7 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var turn_order_label: Label = %TurnOrderLabel
 @onready var combat_log_label: RichTextLabel = %CombatLog
 @onready var hiruko_state_label: Label = %HirukoStateLabel
+@onready var hiruko_profile_label: Label = %HirukoProfileLabel
 @onready var chains_seal_bar: ProgressBar = %ChainsSealBar
 @onready var chains_seal_value_label: Label = %ChainsSealValueLabel
 @onready var wrapper_seal_bar: ProgressBar = %WrapperSealBar
@@ -387,13 +388,40 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 		return false
 
 	action_in_progress = true
-	target.current_hp = maxi(0, target.current_hp - attacker.atk)
+	var raw_damage := maxi(0, attacker.atk)
+	var hp_damage := raw_damage
+	var attack_type := ""
+	var hiruko_hit: Dictionary = {}
+
+	if attacker == hiruko_unit:
+		hp_damage = hiruko_state.get_basic_attack_damage(attacker.atk)
+		attack_type = hiruko_state.get_basic_attack_type_label()
+	elif target == hiruko_unit and attacker.team == BattleUnitModel.Team.ENEMY:
+		hiruko_hit = hiruko_state.prepare_hostile_hit(raw_damage)
+		hp_damage = hiruko_hit["hp_damage"]
+
+	# HP is intentionally applied before raw Seal damage. The prepared result
+	# captured Hiruko's state at hit start for this hit's resistance calculation.
+	target.current_hp = maxi(0, target.current_hp - hp_damage)
 	if target.current_hp == 0:
 		target.defeated = true
 
-	_append_combat_log(
-		"%s attacks %s for %d damage." % [attacker.display_name, target.display_name, attacker.atk]
-	)
+	if not hiruko_hit.is_empty():
+		hiruko_hit = hiruko_state.apply_prepared_seal_damage(hiruko_hit)
+		_log_hiruko_incoming_hit(attacker, hiruko_hit)
+	elif attack_type.is_empty():
+		_append_combat_log(
+			"%s attacks %s for %d damage." % [attacker.display_name, target.display_name, hp_damage]
+		)
+	else:
+		_append_combat_log(
+			"%s attacks %s for %d %s damage." % [
+				attacker.display_name,
+				target.display_name,
+				hp_damage,
+				attack_type.capitalize(),
+			]
+		)
 	if target.defeated:
 		_append_combat_log("%s is defeated." % target.display_name)
 	else:
@@ -408,6 +436,30 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 	action_in_progress = false
 	_activate_next_living_turn()
 	return true
+
+
+func _log_hiruko_incoming_hit(attacker: BattleUnit, hit: Dictionary) -> void:
+	_append_combat_log(
+		"%s attacks Hiruko for %d raw damage." % [attacker.display_name, hit["raw_damage"]]
+	)
+	_append_combat_log(
+		"Hiruko resists %d%% and takes %d damage." % [
+			hit["resistance_percent"],
+			hit["hp_damage"],
+		]
+	)
+	if hit["active_seal"] != HirukoCombatStateModel.ActiveSeal.NONE:
+		_append_combat_log(
+			"Seal [%s]: %d → %d." % [
+				hit["active_seal_label"],
+				hit["seal_before"],
+				hit["seal_after"],
+			]
+		)
+	if hit["seal_broke"]:
+		_append_combat_log("Seal [%s] is broken." % hit["active_seal_label"])
+	if hit["state_after"] != hit["state_at_hit_start"]:
+		_append_combat_log("Hiruko enters %s." % hit["state_after_label"])
 
 
 func _commit_move(unit: BattleUnit, destination: int) -> bool:
@@ -640,6 +692,8 @@ func _refresh_hiruko_ui() -> void:
 		hiruko_state_label.text = "UNAVAILABLE"
 		return
 	hiruko_state_label.text = hiruko_state.get_state_label()
+	hiruko_profile_label.text = hiruko_state.get_profile_label()
+	hiruko_profile_label.tooltip_text = hiruko_profile_label.text
 	chains_seal_bar.max_value = HirukoCombatStateModel.CHAINS_MAX
 	chains_seal_bar.value = hiruko_state.chains_current
 	wrapper_seal_bar.max_value = HirukoCombatStateModel.WRAPPER_MAX
@@ -707,6 +761,8 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = Vector2(0, UNIT_CARD_HEIGHT)
 	card.tooltip_text = "Stable ID: %s" % unit.stable_id
+	if unit == hiruko_unit and hiruko_state != null:
+		card.tooltip_text += "\n%s" % hiruko_state.get_profile_label()
 
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("243b53") if unit.team == BattleUnitModel.Team.PARTY else Color("4a2837")

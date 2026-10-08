@@ -65,7 +65,8 @@ func _test_exact_damage_and_turn_consumption(scene: Control) -> void:
 	var party_1 := _find_unit(scene, &"party_1")
 	var enemy_a := _find_unit(scene, &"enemy_a")
 	_check(scene.resolve_enemy_turn(), "Enemy A did not resolve its Basic Attack")
-	_check(party_1.current_hp == 35, "Enemy A did not deal exactly 9 damage to Party 1")
+	_check(party_1.current_hp == 41, "Enemy A did not apply SEALED resistance to Hiruko")
+	_check(scene.hiruko_state.chains_current == 91, "Enemy A did not apply raw damage to Hiruko's Chains")
 	_check(scene.current_unit == party_1, "Enemy attack did not advance exactly once to Party 1")
 	_check(scene.begin_attack_selection(), "Party 1 could not enter target selection")
 	_check(scene.selecting_target, "Target-selection state was not set")
@@ -75,7 +76,7 @@ func _test_exact_damage_and_turn_consumption(scene: Control) -> void:
 	_check(scene.current_unit.stable_id == &"party_5", "Party attack did not advance exactly once to Party 5")
 	_check(not scene.select_attack_target(&"enemy_a"), "Repeated target activation committed another attack")
 	_check(enemy_a.current_hp == 32, "Repeated target activation dealt duplicate damage")
-	_check(scene.combat_log_entries.has("Hiruko attacks Enemy A for 10 damage."), "Party attack was not logged")
+	_check(scene.combat_log_entries.has("Hiruko attacks Enemy A for 10 Blunt damage."), "Hiruko's SEALED attack profile was not logged")
 	_check(scene.combat_log_entries.has("Enemy A has 32 HP remaining."), "Remaining enemy HP was not logged")
 
 
@@ -137,7 +138,7 @@ func _test_enemy_targeting(scene: Control) -> void:
 	var party_1 := _find_unit(scene, &"party_1")
 	_check(_ids(scene._get_valid_attack_targets(scene.current_unit)) == [&"party_1", &"party_2"], "Enemy target list did not contain party Front in stable-ID order")
 	_check(scene.resolve_enemy_turn(), "Enemy A did not resolve its attack")
-	_check(party_1.current_hp == 35, "Enemy A did not deterministically target Party 1 for 9 damage")
+	_check(party_1.current_hp == 41, "Enemy A did not deterministically target resistant Hiruko")
 	_check(scene.current_unit.stable_id == &"party_1", "Enemy attack did not integrate with the existing queue")
 
 

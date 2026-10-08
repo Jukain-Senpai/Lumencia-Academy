@@ -166,11 +166,12 @@ func _test_m3_actions_and_defeat() -> void:
 		return
 	var hiruko: BattleUnit = scene.hiruko_unit
 	_check(scene.resolve_enemy_turn(), "Enemy could not attack Hiruko through the M3 path")
-	_check(hiruko.current_hp == 35, "Hiruko received modified rather than generic M3 damage")
+	_check(hiruko.current_hp == 41, "Hiruko did not receive the superseding M4.2 SEALED damage")
+	_check(scene.hiruko_state.chains_current == 91, "Enemy hit did not apply raw damage to Chains")
 	_check(scene.current_unit == hiruko, "Hiruko did not receive her normal M3 turn")
 	var enemy_a := _find_unit(scene, &"enemy_a")
 	_check(scene.begin_attack_selection() and scene.select_attack_target(&"enemy_a"), "Hiruko could not use Basic Attack")
-	_check(enemy_a.current_hp == 32, "Hiruko Basic Attack did not deal unchanged M3 ATK")
+	_check(enemy_a.current_hp == 32, "SEALED Hiruko Basic Attack did not deal base ATK")
 
 	scene.restart_battle()
 	scene.advance_turn()

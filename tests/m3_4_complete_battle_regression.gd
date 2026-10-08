@@ -128,11 +128,12 @@ func _test_automatic_enemy_turns() -> void:
 	if scene == null:
 		return
 	var party_1 := _find_unit(scene, &"party_1")
-	_check(party_1.current_hp == 35, "Initial automatic Enemy A attack did not deal exactly 9 damage to Party 1")
+	_check(party_1.current_hp == 41, "Initial automatic Enemy A attack did not apply SEALED resistance")
+	_check(scene.hiruko_state.chains_current == 91, "Initial automatic Enemy A attack did not damage Chains by raw ATK")
 	_check(scene.current_unit == party_1, "Initial automatic enemy turn did not advance to Party 1")
 	_check(scene.get_node_or_null("%ResolveEnemyTurnButton") == null, "Resolve Enemy Turn debug control still exists")
 	_check(scene.get_node("%AttackButton").visible and scene.get_node("%MoveButton").visible, "Party action controls were not enabled after automatic enemy resolution")
-	_check(scene.combat_log_entries.has("Enemy A attacks Hiruko for 9 damage."), "Automatic enemy attack was not logged")
+	_check(scene.combat_log_entries.has("Enemy A attacks Hiruko for 9 raw damage."), "Automatic enemy attack was not logged")
 	await _free_scene(scene)
 
 	var chain_scene := await _new_scene(false)
@@ -149,10 +150,11 @@ func _test_automatic_enemy_turns() -> void:
 	_check(not chain_scene.get_node("%AttackButton").visible and not chain_scene.get_node("%MoveButton").visible and not chain_scene.get_node("%CancelButton").visible, "Player input was available during an enemy turn")
 	await process_frame
 	await process_frame
-	_check(party_1.current_hp == 27, "Consecutive enemies did not each attack exactly once")
+	_check(party_1.current_hp == 38, "Consecutive resistant hits did not each resolve exactly once")
+	_check(chain_scene.hiruko_state.chains_current == 83, "Consecutive hits did not apply raw Seal damage")
 	_check(chain_scene.current_unit == party_1, "Consecutive enemy processing did not reach the next party actor")
-	_check(_log_count(chain_scene, "Enemy A attacks Hiruko for 9 damage.") == 1, "Enemy A resolved more than once in a consecutive chain")
-	_check(_log_count(chain_scene, "Enemy B attacks Hiruko for 8 damage.") == 1, "Enemy B resolved more than once in a consecutive chain")
+	_check(_log_count(chain_scene, "Enemy A attacks Hiruko for 9 raw damage.") == 1, "Enemy A resolved more than once in a consecutive chain")
+	_check(_log_count(chain_scene, "Enemy B attacks Hiruko for 8 raw damage.") == 1, "Enemy B resolved more than once in a consecutive chain")
 	await _free_scene(chain_scene)
 
 
@@ -184,7 +186,8 @@ func _test_victory_and_restart() -> void:
 	await process_frame
 	_check(scene.battle_result == scene.BattleResult.NONE, "Restart after Victory retained battle result")
 	_check(scene.current_unit.stable_id == &"party_1", "Restart after Victory did not resume normal automatic flow")
-	_check(_find_unit(scene, &"party_1").current_hp == 35, "Restart after Victory did not produce one clean initial enemy attack")
+	_check(_find_unit(scene, &"party_1").current_hp == 41, "Restart after Victory did not produce one clean resistant initial hit")
+	_check(scene.hiruko_state.chains_current == 91, "Restart after Victory did not produce one clean initial Seal hit")
 	_check(_all_units_restored_except_initial_hit(scene), "Restart after Victory did not restore fixture state")
 	await _free_scene(scene)
 
@@ -197,7 +200,8 @@ func _test_defeat_and_restart() -> void:
 		_defeat(unit)
 	var party_1 := _find_unit(scene, &"party_1")
 	party_1.defeated = false
-	party_1.current_hp = 5
+	# Enemy A's raw 9 becomes 3 HP damage against SEALED Hiruko in M4.2.
+	party_1.current_hp = 3
 	scene.automatic_enemy_turns_enabled = true
 	scene._schedule_enemy_turn()
 	await process_frame
@@ -212,7 +216,8 @@ func _test_defeat_and_restart() -> void:
 	scene.restart_battle()
 	await process_frame
 	_check(scene.battle_result == scene.BattleResult.NONE, "Restart after Defeat retained battle result")
-	_check(scene.current_unit.stable_id == &"party_1" and _find_unit(scene, &"party_1").current_hp == 35, "Restart after Defeat did not restore normal initial flow")
+	_check(scene.current_unit.stable_id == &"party_1" and _find_unit(scene, &"party_1").current_hp == 41, "Restart after Defeat did not restore normal initial flow")
+	_check(scene.hiruko_state.chains_current == 91, "Restart after Defeat did not restore one clean initial Seal hit")
 	_check(_all_units_restored_except_initial_hit(scene), "Restart after Defeat did not restore fixture state")
 	await _free_scene(scene)
 
@@ -228,8 +233,9 @@ func _test_stale_deferred_restart() -> void:
 	await process_frame
 	await process_frame
 	var party_1 := _find_unit(scene, &"party_1")
-	_check(party_1.current_hp == 35, "A stale deferred enemy action leaked through Restart")
-	_check(_log_count(scene, "Enemy A attacks Hiruko for 9 damage.") == 1, "Restart produced duplicate initial enemy actions")
+	_check(party_1.current_hp == 41, "A stale deferred enemy action leaked through Restart")
+	_check(scene.hiruko_state.chains_current == 91, "A stale deferred enemy action damaged Chains twice")
+	_check(_log_count(scene, "Enemy A attacks Hiruko for 9 raw damage.") == 1, "Restart produced duplicate initial enemy actions")
 	_check(scene.current_unit == party_1, "Restart with a pending enemy action did not settle on Party 1")
 	await _free_scene(scene)
 
@@ -460,7 +466,7 @@ func _all_units_restored_except_initial_hit(scene: Control) -> bool:
 			return false
 		var expected_hp: int = unit.max_hp
 		if unit.stable_id == &"party_1":
-			expected_hp -= 9
+			expected_hp -= 3
 		if unit.current_hp != expected_hp:
 			return false
 	return true
