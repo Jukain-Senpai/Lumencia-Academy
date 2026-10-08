@@ -87,7 +87,7 @@ func _test_move_commit_cancel_and_invalid() -> void:
 	_check(scene.select_move_destination(BattleUnitModel.Line.MID), "Valid Front to Mid Move was rejected")
 	_check(party_1.line == BattleUnitModel.Line.MID, "Move commit did not update semantic line state")
 	_check(scene.current_unit.stable_id == &"party_5" and scene.turn_index == 2, "Move did not advance exactly once")
-	_check(scene.combat_log_entries.has("Party 1 moves from Front to Mid."), "Move commit was not logged correctly")
+	_check(scene.combat_log_entries.has("Hiruko moves from Front to Mid."), "Move commit was not logged correctly")
 	_check(scene.get_node("%AllyFrontUnits").get_child_count() == 1, "Moved card remained in Ally Front")
 	_check(scene.get_node("%AllyMidUnits").get_child_count() == 3, "Moved card did not appear in Ally Mid")
 	_check(not scene.select_move_destination(BattleUnitModel.Line.MID), "Duplicate Move activation committed twice")
@@ -132,7 +132,7 @@ func _test_automatic_enemy_turns() -> void:
 	_check(scene.current_unit == party_1, "Initial automatic enemy turn did not advance to Party 1")
 	_check(scene.get_node_or_null("%ResolveEnemyTurnButton") == null, "Resolve Enemy Turn debug control still exists")
 	_check(scene.get_node("%AttackButton").visible and scene.get_node("%MoveButton").visible, "Party action controls were not enabled after automatic enemy resolution")
-	_check(scene.combat_log_entries.has("Enemy A attacks Party 1 for 9 damage."), "Automatic enemy attack was not logged")
+	_check(scene.combat_log_entries.has("Enemy A attacks Hiruko for 9 damage."), "Automatic enemy attack was not logged")
 	await _free_scene(scene)
 
 	var chain_scene := await _new_scene(false)
@@ -151,8 +151,8 @@ func _test_automatic_enemy_turns() -> void:
 	await process_frame
 	_check(party_1.current_hp == 27, "Consecutive enemies did not each attack exactly once")
 	_check(chain_scene.current_unit == party_1, "Consecutive enemy processing did not reach the next party actor")
-	_check(_log_count(chain_scene, "Enemy A attacks Party 1 for 9 damage.") == 1, "Enemy A resolved more than once in a consecutive chain")
-	_check(_log_count(chain_scene, "Enemy B attacks Party 1 for 8 damage.") == 1, "Enemy B resolved more than once in a consecutive chain")
+	_check(_log_count(chain_scene, "Enemy A attacks Hiruko for 9 damage.") == 1, "Enemy A resolved more than once in a consecutive chain")
+	_check(_log_count(chain_scene, "Enemy B attacks Hiruko for 8 damage.") == 1, "Enemy B resolved more than once in a consecutive chain")
 	await _free_scene(chain_scene)
 
 
@@ -229,7 +229,7 @@ func _test_stale_deferred_restart() -> void:
 	await process_frame
 	var party_1 := _find_unit(scene, &"party_1")
 	_check(party_1.current_hp == 35, "A stale deferred enemy action leaked through Restart")
-	_check(_log_count(scene, "Enemy A attacks Party 1 for 9 damage.") == 1, "Restart produced duplicate initial enemy actions")
+	_check(_log_count(scene, "Enemy A attacks Hiruko for 9 damage.") == 1, "Restart produced duplicate initial enemy actions")
 	_check(scene.current_unit == party_1, "Restart with a pending enemy action did not settle on Party 1")
 	await _free_scene(scene)
 

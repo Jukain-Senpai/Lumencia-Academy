@@ -1,10 +1,12 @@
 extends Control
 
-## Milestone 3 battle sandbox. Owns fixture, round, and turn state locally.
+## Milestone 4 battle sandbox. Owns fixture, round, turn, and Hiruko prototype state locally.
 
 const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
+const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_state.gd")
 const UNIT_CARD_HEIGHT := 44.0
 const UNIT_CARD_GAP := 2.0
+const HIRUKO_UNIT_ID: StringName = &"party_1"
 
 enum BattleResult {
 	NONE,
@@ -12,9 +14,9 @@ enum BattleResult {
 	DEFEAT,
 }
 
-# Temporary sandbox fixtures. These values are intentionally small and non-canonical.
+# Temporary sandbox fixtures. Hiruko retains Party 1's M3 values; none are final balance.
 const PARTY_FIXTURES: Array[Dictionary] = [
-	{"id": "party_1", "name": "Party 1", "team": BattleUnitModel.Team.PARTY, "current_hp": 44, "max_hp": 44, "atk": 10, "spd": 14, "line": BattleUnitModel.Line.FRONT, "defeated": false},
+	{"id": "party_1", "name": "Hiruko", "team": BattleUnitModel.Team.PARTY, "current_hp": 44, "max_hp": 44, "atk": 10, "spd": 14, "line": BattleUnitModel.Line.FRONT, "defeated": false},
 	{"id": "party_2", "name": "Party 2", "team": BattleUnitModel.Team.PARTY, "current_hp": 40, "max_hp": 40, "atk": 9, "spd": 11, "line": BattleUnitModel.Line.FRONT, "defeated": false},
 	{"id": "party_3", "name": "Party 3", "team": BattleUnitModel.Team.PARTY, "current_hp": 36, "max_hp": 36, "atk": 8, "spd": 9, "line": BattleUnitModel.Line.MID, "defeated": false},
 	{"id": "party_4", "name": "Party 4", "team": BattleUnitModel.Team.PARTY, "current_hp": 34, "max_hp": 34, "atk": 7, "spd": 7, "line": BattleUnitModel.Line.MID, "defeated": false},
@@ -42,6 +44,14 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var current_turn_label: Label = %CurrentTurnLabel
 @onready var turn_order_label: Label = %TurnOrderLabel
 @onready var combat_log_label: RichTextLabel = %CombatLog
+@onready var hiruko_state_label: Label = %HirukoStateLabel
+@onready var chains_seal_bar: ProgressBar = %ChainsSealBar
+@onready var chains_seal_value_label: Label = %ChainsSealValueLabel
+@onready var wrapper_seal_bar: ProgressBar = %WrapperSealBar
+@onready var wrapper_seal_value_label: Label = %WrapperSealValueLabel
+@onready var break_chains_button: Button = %BreakChainsButton
+@onready var break_wrapper_button: Button = %BreakWrapperButton
+@onready var reset_hiruko_button: Button = %ResetHirukoButton
 
 var party_units: Array[BattleUnit] = []
 var enemy_units: Array[BattleUnit] = []
@@ -59,6 +69,8 @@ var battle_result: BattleResult = BattleResult.NONE
 var automatic_enemy_turns_enabled := true
 var enemy_action_pending := false
 var battle_generation := 0
+var hiruko_unit: BattleUnit = null
+var hiruko_state: RefCounted = null
 
 
 func _ready() -> void:
@@ -69,6 +81,9 @@ func _ready() -> void:
 	move_front_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.FRONT))
 	move_mid_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.MID))
 	move_back_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.BACK))
+	break_chains_button.pressed.connect(debug_break_chains)
+	break_wrapper_button.pressed.connect(debug_break_wrapper)
+	reset_hiruko_button.pressed.connect(debug_reset_hiruko)
 	restart_battle()
 
 
@@ -87,6 +102,11 @@ func restart_battle() -> void:
 
 	party_units.assign(rebuilt_party)
 	enemy_units.assign(rebuilt_enemies)
+	hiruko_unit = _find_unit_by_id(HIRUKO_UNIT_ID)
+	hiruko_state = HirukoCombatStateModel.new()
+	if hiruko_unit == null or hiruko_unit.display_name != "Hiruko":
+		status_label.text = "Hiruko fixture error — check the debugger."
+		return
 	_reset_turn_state()
 	_render_battlefield()
 	_append_combat_log("Battle started.")
@@ -98,6 +118,45 @@ func restart_battle() -> void:
 	move_front_button.release_focus()
 	move_mid_button.release_focus()
 	move_back_button.release_focus()
+	break_chains_button.release_focus()
+	break_wrapper_button.release_focus()
+	reset_hiruko_button.release_focus()
+
+
+func debug_break_chains() -> bool:
+	if hiruko_state == null:
+		return false
+	if not hiruko_state.break_chains():
+		_append_combat_log("Seal [Chains] is already broken.")
+		return false
+	_append_combat_log("Seal [Chains] broken.")
+	_append_combat_log("Hiruko entered FLAMING SWORD.")
+	_render_battlefield()
+	return true
+
+
+func debug_break_wrapper() -> bool:
+	if hiruko_state == null:
+		return false
+	if hiruko_state.chains_current > 0:
+		_append_combat_log("Cannot break Seal [Wrapper] while Seal [Chains] is intact.")
+		return false
+	if not hiruko_state.break_wrapper():
+		_append_combat_log("Seal [Wrapper] is already broken.")
+		return false
+	_append_combat_log("Seal [Wrapper] broken.")
+	_append_combat_log("Hiruko entered LAEVATAIN.")
+	_render_battlefield()
+	return true
+
+
+func debug_reset_hiruko() -> bool:
+	if hiruko_state == null:
+		return false
+	hiruko_state.reset()
+	_append_combat_log("Hiruko debug state reset to SEALED.")
+	_render_battlefield()
+	return true
 
 
 func advance_turn() -> void:
@@ -573,6 +632,42 @@ func _render_battlefield() -> void:
 		container.add_child(card)
 		_position_unit_card(card, slot)
 		next_slots[container] = slot + 1
+	_refresh_hiruko_ui()
+
+
+func _refresh_hiruko_ui() -> void:
+	if hiruko_state == null:
+		hiruko_state_label.text = "UNAVAILABLE"
+		return
+	hiruko_state_label.text = hiruko_state.get_state_label()
+	chains_seal_bar.max_value = HirukoCombatStateModel.CHAINS_MAX
+	chains_seal_bar.value = hiruko_state.chains_current
+	wrapper_seal_bar.max_value = HirukoCombatStateModel.WRAPPER_MAX
+	wrapper_seal_bar.value = hiruko_state.wrapper_current
+	chains_seal_value_label.text = _seal_value_text(
+		hiruko_state.chains_current, HirukoCombatStateModel.CHAINS_MAX
+	)
+	wrapper_seal_value_label.text = _seal_value_text(
+		hiruko_state.wrapper_current, HirukoCombatStateModel.WRAPPER_MAX
+	)
+	chains_seal_bar.modulate = _seal_tint(
+		hiruko_state.chains_current, HirukoCombatStateModel.CHAINS_MAX
+	)
+	wrapper_seal_bar.modulate = _seal_tint(
+		hiruko_state.wrapper_current, HirukoCombatStateModel.WRAPPER_MAX
+	)
+
+
+func _seal_value_text(current: int, maximum: int) -> String:
+	return "BROKEN" if current == 0 else "%d/%d" % [current, maximum]
+
+
+func _seal_tint(current: int, maximum: int) -> Color:
+	if current == 0:
+		return Color("d4858f")
+	if current < maximum:
+		return Color("f2c879")
+	return Color("78b7d0")
 
 
 func _all_line_containers() -> Array[Control]:
@@ -661,6 +756,9 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		card.mouse_filter = Control.MOUSE_FILTER_STOP
 		card.gui_input.connect(_on_target_card_input.bind(unit.stable_id))
+	elif unit == hiruko_unit and hiruko_state != null:
+		state_label.text = hiruko_state.get_state_label()
+		state_label.add_theme_color_override("font_color", Color("f2c879"))
 	identity_row.add_child(state_label)
 
 	var line_label := Label.new()

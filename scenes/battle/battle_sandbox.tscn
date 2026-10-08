@@ -91,13 +91,13 @@ theme_override_constants/separation = 2
 [node name="Title" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
-theme_override_font_sizes/font_size = 28
-text = "M3.4  •  Complete Battle Loop"
+theme_override_font_sizes/font_size = 26
+text = "M4.1  •  Hiruko Combat-State Foundation"
 
 [node name="Subtitle" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
-text = "Move, attack, and survive the deterministic sandbox battle"
+text = "Test Hiruko's Seal states while preserving the M3 battle loop"
 
 [node name="RestartButton" type="Button" parent="Margin/Layout/Header"]
 unique_name_in_owner = true
@@ -307,6 +307,7 @@ theme_override_constants/separation = 18
 [node name="TurnStatus" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.4
 theme_override_constants/separation = 4
 
 [node name="RoundRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
@@ -353,6 +354,99 @@ layout_mode = 2
 size_flags_vertical = 3
 text = "—"
 autowrap_mode = 2
+
+[node name="HirukoDebug" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.9
+theme_override_constants/separation = 2
+
+[node name="StateRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Heading" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/StateRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
+text = "HIRUKO STATE"
+
+[node name="HirukoStateLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/StateRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
+text = "SEALED"
+
+[node name="ChainsRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Label" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/ChainsRow"]
+custom_minimum_size = Vector2(112, 0)
+layout_mode = 2
+text = "Seal [Chains]"
+
+[node name="ChainsSealBar" type="ProgressBar" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/ChainsRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 12)
+layout_mode = 2
+size_flags_horizontal = 3
+show_percentage = false
+
+[node name="ChainsSealValueLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/ChainsRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(58, 0)
+layout_mode = 2
+text = "100/100"
+horizontal_alignment = 2
+
+[node name="WrapperRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Label" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/WrapperRow"]
+custom_minimum_size = Vector2(112, 0)
+layout_mode = 2
+text = "Seal [Wrapper]"
+
+[node name="WrapperSealBar" type="ProgressBar" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/WrapperRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 12)
+layout_mode = 2
+size_flags_horizontal = 3
+show_percentage = false
+
+[node name="WrapperSealValueLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/WrapperRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(58, 0)
+layout_mode = 2
+text = "100/100"
+horizontal_alignment = 2
+
+[node name="DebugButtons" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="BreakChainsButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/DebugButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 11
+text = "Break Chains — DEBUG"
+
+[node name="BreakWrapperButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/DebugButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 11
+text = "Break Wrapper — DEBUG"
+
+[node name="ResetHirukoButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/HirukoDebug/DebugButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 11
+text = "Reset Hiruko — DEBUG"
 
 [node name="ActionRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
 layout_mode = 2
@@ -410,6 +504,7 @@ text = "Back"
 [node name="LogColumn" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.1
 theme_override_constants/separation = 4
 
 [node name="Heading" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/LogColumn"]

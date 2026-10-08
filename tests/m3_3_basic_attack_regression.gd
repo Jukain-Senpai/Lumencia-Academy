@@ -75,7 +75,7 @@ func _test_exact_damage_and_turn_consumption(scene: Control) -> void:
 	_check(scene.current_unit.stable_id == &"party_5", "Party attack did not advance exactly once to Party 5")
 	_check(not scene.select_attack_target(&"enemy_a"), "Repeated target activation committed another attack")
 	_check(enemy_a.current_hp == 32, "Repeated target activation dealt duplicate damage")
-	_check(scene.combat_log_entries.has("Party 1 attacks Enemy A for 10 damage."), "Party attack was not logged")
+	_check(scene.combat_log_entries.has("Hiruko attacks Enemy A for 10 damage."), "Party attack was not logged")
 	_check(scene.combat_log_entries.has("Enemy A has 32 HP remaining."), "Remaining enemy HP was not logged")
 
 
