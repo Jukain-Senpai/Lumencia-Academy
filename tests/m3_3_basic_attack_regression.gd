@@ -63,10 +63,11 @@ func _test_initial_target_availability(scene: Control) -> void:
 func _test_exact_damage_and_turn_consumption(scene: Control) -> void:
 	scene.restart_battle()
 	var party_1 := _find_unit(scene, &"party_1")
+	var party_2 := _find_unit(scene, &"party_2")
 	var enemy_a := _find_unit(scene, &"enemy_a")
 	_check(scene.resolve_enemy_turn(), "Enemy A did not resolve its Basic Attack")
-	_check(party_1.current_hp == 41, "Enemy A did not apply SEALED resistance to Hiruko")
-	_check(scene.hiruko_state.chains_current == 91, "Enemy A did not apply raw damage to Hiruko's Chains")
+	_check(party_2.current_hp == 31, "Enemy A did not damage front-line Jukain by its exact ATK")
+	_check(party_1.current_hp == party_1.max_hp and scene.hiruko_state.chains_current == 100, "Protected Mid Hiruko was damaged through Jukain's Front line")
 	_check(scene.current_unit == party_1, "Enemy attack did not advance exactly once to Party 1")
 	_check(scene.begin_attack_selection(), "Party 1 could not enter target selection")
 	_check(scene.selecting_target, "Target-selection state was not set")
@@ -136,9 +137,10 @@ func _test_defeat_and_queue_skip(scene: Control) -> void:
 func _test_enemy_targeting(scene: Control) -> void:
 	scene.restart_battle()
 	var party_1 := _find_unit(scene, &"party_1")
-	_check(_ids(scene._get_valid_attack_targets(scene.current_unit)) == [&"party_1", &"party_2"], "Enemy target list did not contain party Front in stable-ID order")
+	var party_2 := _find_unit(scene, &"party_2")
+	_check(_ids(scene._get_valid_attack_targets(scene.current_unit)) == [&"party_2"], "Enemy target list did not contain the sole party Front unit")
 	_check(scene.resolve_enemy_turn(), "Enemy A did not resolve its attack")
-	_check(party_1.current_hp == 41, "Enemy A did not deterministically target resistant Hiruko")
+	_check(party_2.current_hp == 31 and party_1.current_hp == party_1.max_hp, "Enemy A did not deterministically target front-line Jukain")
 	_check(scene.current_unit.stable_id == &"party_1", "Enemy attack did not integrate with the existing queue")
 
 

@@ -88,8 +88,8 @@ func _test_move_commit_cancel_and_invalid() -> void:
 	_check(party_1.line == BattleUnitModel.Line.MID, "Move commit did not update semantic line state")
 	_check(scene.current_unit.stable_id == &"party_5" and scene.turn_index == 2, "Move did not advance exactly once")
 	_check(scene.combat_log_entries.has("Hiruko moves from Front to Mid."), "Move commit was not logged correctly")
-	_check(scene.get_node("%AllyFrontUnits").get_child_count() == 1, "Moved card remained in Ally Front")
-	_check(scene.get_node("%AllyMidUnits").get_child_count() == 3, "Moved card did not appear in Ally Mid")
+	_check(scene.get_node("%AllyFrontUnits").get_child_count() == 0, "Moved card remained in Ally Front")
+	_check(scene.get_node("%AllyMidUnits").get_child_count() == 4, "Moved card did not appear in Ally Mid")
 	_check(not scene.select_move_destination(BattleUnitModel.Line.MID), "Duplicate Move activation committed twice")
 	_check(party_1.line == BattleUnitModel.Line.MID and scene.turn_index == 2, "Duplicate Move activation changed state")
 
@@ -183,6 +183,7 @@ func _test_victory_and_restart() -> void:
 
 	scene.automatic_enemy_turns_enabled = true
 	scene.restart_battle()
+	_expose_hiruko(scene)
 	await process_frame
 	_check(scene.battle_result == scene.BattleResult.NONE, "Restart after Victory retained battle result")
 	_check(scene.current_unit.stable_id == &"party_1", "Restart after Victory did not resume normal automatic flow")
@@ -214,6 +215,7 @@ func _test_defeat_and_restart() -> void:
 	_check(not scene.resolve_enemy_turn(), "Enemy action resolved after Defeat")
 
 	scene.restart_battle()
+	_expose_hiruko(scene)
 	await process_frame
 	_check(scene.battle_result == scene.BattleResult.NONE, "Restart after Defeat retained battle result")
 	_check(scene.current_unit.stable_id == &"party_1" and _find_unit(scene, &"party_1").current_hp == 41, "Restart after Defeat did not restore normal initial flow")
@@ -228,8 +230,10 @@ func _test_stale_deferred_restart() -> void:
 		return
 	root.add_child(scene)
 	current_scene = scene
+	_expose_hiruko(scene)
 	# _ready scheduled the original battle's Enemy A. Restart before that callback runs.
 	scene.restart_battle()
+	_expose_hiruko(scene)
 	await process_frame
 	await process_frame
 	var party_1 := _find_unit(scene, &"party_1")
@@ -399,6 +403,9 @@ func _new_scene(automatic_enemies: bool) -> Control:
 		return null
 	root.add_child(scene)
 	current_scene = scene
+	# M3.4's legacy Hiruko damage and Front-to-Mid movement fixtures deliberately
+	# expose Hiruko; production still starts with Jukain Front and Hiruko Mid.
+	_expose_hiruko(scene)
 	await process_frame
 	return scene
 
@@ -422,6 +429,12 @@ func _find_unit(scene: Control, id: StringName) -> BattleUnit:
 		if unit.stable_id == id:
 			return unit
 	return null
+
+
+func _expose_hiruko(scene: Control) -> void:
+	scene.hiruko_unit.line = BattleUnitModel.Line.FRONT
+	_find_unit(scene, &"party_2").line = BattleUnitModel.Line.MID
+	scene._render_battlefield()
 
 
 func _defeat(unit: BattleUnit) -> void:

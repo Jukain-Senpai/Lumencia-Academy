@@ -1,10 +1,11 @@
 extends Control
 
-## Milestone 5.1 battle sandbox. Owns fixture, round, turn, and character state locally.
+## Milestone 5.2 battle sandbox. Owns fixture, turn flow, character state, and one Prescript.
 
 const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
 const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_state.gd")
 const JukainCombatStateModel := preload("res://scripts/battle/jukain_combat_state.gd")
+const JukainPrescriptStateModel := preload("res://scripts/battle/jukain_prescript_state.gd")
 const UNIT_CARD_HEIGHT := 44.0
 const UNIT_CARD_GAP := 2.0
 const HIRUKO_UNIT_ID: StringName = &"party_1"
@@ -26,7 +27,7 @@ enum HirukoSkill {
 
 # Temporary sandbox fixtures. Hiruko and Jukain retain their M3 slot values; none are canon balance.
 const PARTY_FIXTURES: Array[Dictionary] = [
-	{"id": "party_1", "name": "Hiruko", "team": BattleUnitModel.Team.PARTY, "current_hp": 44, "max_hp": 44, "atk": 10, "spd": 14, "line": BattleUnitModel.Line.FRONT, "defeated": false},
+	{"id": "party_1", "name": "Hiruko", "team": BattleUnitModel.Team.PARTY, "current_hp": 44, "max_hp": 44, "atk": 10, "spd": 14, "line": BattleUnitModel.Line.MID, "defeated": false},
 	{"id": "party_2", "name": "Jukain", "team": BattleUnitModel.Team.PARTY, "current_hp": 40, "max_hp": 40, "atk": 9, "spd": 11, "line": BattleUnitModel.Line.FRONT, "defeated": false},
 	{"id": "party_3", "name": "Party 3", "team": BattleUnitModel.Team.PARTY, "current_hp": 36, "max_hp": 36, "atk": 8, "spd": 9, "line": BattleUnitModel.Line.MID, "defeated": false},
 	{"id": "party_4", "name": "Party 4", "team": BattleUnitModel.Team.PARTY, "current_hp": 34, "max_hp": 34, "atk": 7, "spd": 7, "line": BattleUnitModel.Line.MID, "defeated": false},
@@ -46,6 +47,7 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var skill_button: Button = %SkillButton
 @onready var move_button: Button = %MoveButton
 @onready var cancel_button: Button = %CancelButton
+@onready var confirm_ally_attack_button: Button = %ConfirmAllyAttackButton
 @onready var kick_skill_button: Button = %KickSkillButton
 @onready var gut_stab_skill_button: Button = %GutStabSkillButton
 @onready var skill_back_button: Button = %SkillBackButton
@@ -58,17 +60,11 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var current_turn_label: Label = %CurrentTurnLabel
 @onready var turn_order_label: Label = %TurnOrderLabel
 @onready var combat_log_label: RichTextLabel = %CombatLog
-@onready var hiruko_state_label: Label = %HirukoStateLabel
-@onready var hiruko_profile_label: Label = %HirukoProfileLabel
-@onready var chains_seal_bar: ProgressBar = %ChainsSealBar
-@onready var chains_seal_value_label: Label = %ChainsSealValueLabel
-@onready var wrapper_seal_bar: ProgressBar = %WrapperSealBar
-@onready var wrapper_seal_value_label: Label = %WrapperSealValueLabel
+@onready var inspector_selection_label: Label = %InspectorSelectionLabel
+@onready var inspector_details_label: RichTextLabel = %InspectorDetailsLabel
 @onready var break_chains_button: Button = %BreakChainsButton
 @onready var break_wrapper_button: Button = %BreakWrapperButton
 @onready var reset_hiruko_button: Button = %ResetHirukoButton
-@onready var jukain_state_label: Label = %JukainStateLabel
-@onready var jukain_atk_label: Label = %JukainAtkLabel
 @onready var unlock_jukain_button: Button = %UnlockJukainButton
 @onready var reset_jukain_button: Button = %ResetJukainButton
 
@@ -95,6 +91,9 @@ var hiruko_unit: BattleUnit = null
 var hiruko_state: RefCounted = null
 var jukain_unit: BattleUnit = null
 var jukain_state: RefCounted = null
+var jukain_prescript: RefCounted = null
+var selected_inspector_unit_id: StringName = HIRUKO_UNIT_ID
+var ally_attack_confirmation_target_id: StringName = &""
 var burn_remaining_ticks_by_unit_id: Dictionary = {}
 var laevatain_aura_turn_token := ""
 
@@ -105,6 +104,7 @@ func _ready() -> void:
 	skill_button.pressed.connect(begin_skill_selection)
 	move_button.pressed.connect(begin_move_selection)
 	cancel_button.pressed.connect(cancel_action_selection)
+	confirm_ally_attack_button.pressed.connect(confirm_ally_attack)
 	kick_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.KICK))
 	gut_stab_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.GUT_STAB))
 	skill_back_button.pressed.connect(back_from_skill_menu)
@@ -144,6 +144,9 @@ func restart_battle() -> void:
 	if jukain_unit == null or jukain_unit.display_name != "Jukain":
 		status_label.text = "Jukain fixture error — check the debugger."
 		return
+	jukain_prescript = JukainPrescriptStateModel.new()
+	jukain_prescript.reset(hiruko_unit.current_hp)
+	selected_inspector_unit_id = HIRUKO_UNIT_ID
 	_reset_turn_state()
 	_render_battlefield()
 	_append_combat_log("Battle started.")
@@ -153,6 +156,7 @@ func restart_battle() -> void:
 	skill_button.release_focus()
 	move_button.release_focus()
 	cancel_button.release_focus()
+	confirm_ally_attack_button.release_focus()
 	kick_skill_button.release_focus()
 	gut_stab_skill_button.release_focus()
 	skill_back_button.release_focus()
@@ -270,6 +274,11 @@ func cancel_target_selection() -> bool:
 func cancel_action_selection() -> bool:
 	if action_in_progress:
 		return false
+	if ally_attack_confirmation_target_id != &"":
+		ally_attack_confirmation_target_id = &""
+		_render_battlefield()
+		_refresh_action_ui()
+		return true
 	if selected_hiruko_skill != HirukoSkill.NONE:
 		selected_hiruko_skill = HirukoSkill.NONE
 		valid_skill_targets.clear()
@@ -373,7 +382,28 @@ func select_attack_target(target_id: StringName) -> bool:
 	var target := _find_unit_by_id(target_id)
 	if target == null:
 		return false
+	if _is_valid_jukain_ally_target(current_unit, target):
+		ally_attack_confirmation_target_id = target.stable_id
+		_append_combat_log("Jukain selected Hiruko as an ally target. Confirmation required.")
+		_render_battlefield()
+		_refresh_action_ui()
+		return true
 	return _commit_basic_attack(current_unit, target)
+
+
+func confirm_ally_attack() -> bool:
+	if (
+		action_in_progress
+		or not selecting_target
+		or ally_attack_confirmation_target_id == &""
+		or current_unit != jukain_unit
+	):
+		return false
+	var target := _find_unit_by_id(ally_attack_confirmation_target_id)
+	if not _is_valid_jukain_ally_target(current_unit, target):
+		return false
+	_append_combat_log("Ally attack confirmed.")
+	return _commit_basic_attack(current_unit, target, true)
 
 
 func select_hiruko_skill_target(target_id: StringName) -> bool:
@@ -477,6 +507,7 @@ func _activate_next_living_turn() -> void:
 
 		current_unit = candidate
 		_append_combat_log("%s's turn." % current_unit.display_name)
+		_process_jukain_turn_start()
 		if _try_apply_hiruko_turn_start_aura():
 			_render_battlefield()
 		_refresh_turn_ui()
@@ -484,6 +515,28 @@ func _activate_next_living_turn() -> void:
 		return
 
 	_start_round()
+
+
+func _process_jukain_turn_start() -> StringName:
+	if current_unit != jukain_unit or jukain_prescript == null:
+		return &"none"
+	var token := StringName("%d:%d:%d" % [battle_generation, round_number, turn_index])
+	var result: StringName = jukain_prescript.on_jukain_turn_started(
+		token, hiruko_unit.current_hp
+	)
+	if result == &"activated":
+		_append_combat_log(
+			"Prescript active: %s" % JukainPrescriptStateModel.ORIGINAL_REQUIREMENT
+		)
+	elif result == &"defied":
+		_append_combat_log("Prescript deadline reached.")
+		_append_combat_log("Original requirement defied.")
+		_append_combat_log("Karma increased to %d." % jukain_prescript.karma_stacks)
+		_append_combat_log(
+			"Replacement: %s" % JukainPrescriptStateModel.REPLACEMENT_REQUIREMENT
+		)
+	_refresh_character_inspector()
+	return result
 
 
 func _is_living(unit: BattleUnit) -> bool:
@@ -521,6 +574,13 @@ func _get_valid_attack_targets(attacker: BattleUnit) -> Array[BattleUnit]:
 	for unit: BattleUnit in opposing_units:
 		if unit.line == nearest_line and _is_living(unit):
 			targets.append(unit)
+	if (
+		attacker == jukain_unit
+		and jukain_prescript != null
+		and jukain_prescript.can_offer_obey_target()
+		and _is_living(hiruko_unit)
+	):
+		targets.append(hiruko_unit)
 	targets.sort_custom(
 		func(first: BattleUnit, second: BattleUnit) -> bool:
 			return String(first.stable_id) < String(second.stable_id)
@@ -528,10 +588,28 @@ func _get_valid_attack_targets(attacker: BattleUnit) -> Array[BattleUnit]:
 	return targets
 
 
-func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
+func _is_valid_jukain_ally_target(attacker: BattleUnit, target: BattleUnit) -> bool:
+	return (
+		attacker == jukain_unit
+		and target == hiruko_unit
+		and jukain_prescript != null
+		and jukain_prescript.can_offer_obey_target()
+		and _is_living(attacker)
+		and _is_living(target)
+	)
+
+
+func _commit_basic_attack(
+	attacker: BattleUnit, target: BattleUnit, confirmed_ally_attack := false
+) -> bool:
 	if action_in_progress or attacker == null or target == null:
 		return false
 	if attacker != current_unit or not _is_living(attacker):
+		return false
+	var is_confirmed_jukain_ally_attack := (
+		confirmed_ally_attack and _is_valid_jukain_ally_target(attacker, target)
+	)
+	if attacker.team == target.team and not is_confirmed_jukain_ally_attack:
 		return false
 	if not _contains_unit(_get_valid_attack_targets(attacker), target):
 		return false
@@ -539,19 +617,33 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 	action_in_progress = true
 	var raw_damage := maxi(0, attacker.atk)
 	var hp_damage := raw_damage
+	var target_hp_before := target.current_hp
 	var attack_type := ""
 	var hiruko_hit: Dictionary = {}
 	var hiruko_attack_state := -1
 
 	if attacker == jukain_unit:
-		hp_damage = jukain_state.get_effective_atk(attacker.atk)
+		raw_damage = jukain_state.get_effective_atk(attacker.atk)
+		hp_damage = raw_damage
 	elif attacker == hiruko_unit:
 		hiruko_attack_state = hiruko_state.get_state()
 		hp_damage = hiruko_state.get_basic_attack_damage(attacker.atk)
 		attack_type = hiruko_state.get_basic_attack_type_label()
-	elif target == hiruko_unit and attacker.team == BattleUnitModel.Team.ENEMY:
+
+	if (
+		target == hiruko_unit
+		and (attacker.team == BattleUnitModel.Team.ENEMY or is_confirmed_jukain_ally_attack)
+	):
 		hiruko_hit = hiruko_state.prepare_hostile_hit(raw_damage)
 		hp_damage = hiruko_hit["hp_damage"]
+	elif target == jukain_unit and attacker.team == BattleUnitModel.Team.ENEMY:
+		hp_damage = jukain_prescript.get_enemy_damage_to_jukain(raw_damage)
+		if jukain_prescript.karma_stacks > 0:
+			_append_combat_log(
+				"Karma %s increases enemy damage from %d to %d." % [
+					jukain_prescript.get_karma_multiplier_label(), raw_damage, hp_damage
+				]
+			)
 
 	# HP is intentionally applied before raw Seal damage. The prepared result
 	# captured Hiruko's state at hit start for this hit's resistance calculation.
@@ -599,6 +691,26 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 				]
 			)
 
+	if target == hiruko_unit and target.current_hp < target_hp_before:
+		var hiruko_source: StringName = (
+			JukainPrescriptStateModel.SOURCE_JUKAIN_ALLY_ATTACK
+			if is_confirmed_jukain_ally_attack
+			else JukainPrescriptStateModel.SOURCE_ENEMY_ATTACK
+		)
+		if jukain_prescript.record_hiruko_hp_loss(
+			hiruko_source, target_hp_before, target.current_hp
+		):
+			_append_combat_log("Prescript resolved: %s." % jukain_prescript.get_route_label())
+	elif (
+		target == jukain_unit
+		and attacker.team == BattleUnitModel.Team.ENEMY
+		and jukain_prescript.record_enemy_damage_to_jukain(
+			target_hp_before, target.current_hp
+		)
+	):
+		_append_combat_log("Replacement complete.")
+		_append_combat_log("Prescript resolved: DEFY.")
+
 	_clear_action_selection()
 	_render_battlefield()
 	_finish_completed_action(attacker)
@@ -643,6 +755,13 @@ func _commit_move(unit: BattleUnit, destination: int) -> bool:
 		BattleUnitModel.line_name(origin),
 		BattleUnitModel.line_name(destination),
 	])
+	if (
+		unit == jukain_unit
+		and origin == BattleUnitModel.Line.FRONT
+		and destination == BattleUnitModel.Line.MID
+		and jukain_prescript.mark_exploit_setup()
+	):
+		_append_combat_log("Hiruko is exposed.")
 	_clear_action_selection()
 	_render_battlefield()
 	_finish_completed_action(unit)
@@ -948,6 +1067,7 @@ func _find_unit_by_id(target_id: StringName) -> BattleUnit:
 func _clear_target_selection() -> void:
 	selecting_target = false
 	valid_attack_targets.clear()
+	ally_attack_confirmation_target_id = &""
 
 
 func _clear_action_selection() -> void:
@@ -973,6 +1093,7 @@ func _refresh_turn_ui() -> void:
 		order_names.append(unit.display_name)
 	turn_order_label.text = " → ".join(order_names) if not order_names.is_empty() else "—"
 	_refresh_action_ui()
+	_refresh_character_inspector()
 
 
 func _refresh_action_ui() -> void:
@@ -980,6 +1101,7 @@ func _refresh_action_ui() -> void:
 	skill_button.hide()
 	move_button.hide()
 	cancel_button.hide()
+	confirm_ally_attack_button.hide()
 	kick_skill_button.hide()
 	gut_stab_skill_button.hide()
 	skill_back_button.hide()
@@ -995,6 +1117,11 @@ func _refresh_action_ui() -> void:
 	elif current_unit == null:
 		action_mode_label.text = "No current actor"
 		status_label.text = "Turn engine paused."
+	elif ally_attack_confirmation_target_id != &"":
+		action_mode_label.text = "Confirm Ally Attack"
+		confirm_ally_attack_button.show()
+		cancel_button.show()
+		status_label.text = "Confirm Jukain's attack on Hiruko or cancel."
 	elif selecting_target:
 		action_mode_label.text = "Attack — Select Target"
 		cancel_button.show()
@@ -1086,46 +1213,129 @@ func _render_battlefield() -> void:
 		container.add_child(card)
 		_position_unit_card(card, slot)
 		next_slots[container] = slot + 1
-	_refresh_hiruko_ui()
-	_refresh_jukain_ui()
+	_refresh_character_inspector()
 
 
-func _refresh_hiruko_ui() -> void:
-	if hiruko_state == null:
-		hiruko_state_label.text = "UNAVAILABLE"
+func select_inspector_unit(unit_id: StringName) -> bool:
+	if (
+		action_in_progress
+		or selecting_target
+		or selecting_move
+		or selecting_skill
+		or selected_hiruko_skill != HirukoSkill.NONE
+		or ally_attack_confirmation_target_id != &""
+	):
+		return false
+	var unit := _find_unit_by_id(unit_id)
+	if unit == null or unit.team != BattleUnitModel.Team.PARTY:
+		return false
+	selected_inspector_unit_id = unit.stable_id
+	_render_battlefield()
+	return true
+
+
+func _get_selected_inspector_unit() -> BattleUnit:
+	var selected := _find_unit_by_id(selected_inspector_unit_id)
+	if selected != null and selected.team == BattleUnitModel.Team.PARTY:
+		return selected
+	selected_inspector_unit_id = HIRUKO_UNIT_ID
+	return hiruko_unit
+
+
+func _refresh_character_inspector() -> void:
+	if not is_node_ready():
 		return
-	hiruko_state_label.text = hiruko_state.get_state_label()
-	hiruko_profile_label.text = _get_hiruko_profile_text()
-	hiruko_profile_label.tooltip_text = hiruko_profile_label.text
-	chains_seal_bar.max_value = HirukoCombatStateModel.CHAINS_MAX
-	chains_seal_bar.value = hiruko_state.chains_current
-	wrapper_seal_bar.max_value = HirukoCombatStateModel.WRAPPER_MAX
-	wrapper_seal_bar.value = hiruko_state.wrapper_current
-	chains_seal_value_label.text = _seal_value_text(
-		hiruko_state.chains_current, HirukoCombatStateModel.CHAINS_MAX
-	)
-	wrapper_seal_value_label.text = _seal_value_text(
-		hiruko_state.wrapper_current, HirukoCombatStateModel.WRAPPER_MAX
-	)
-	chains_seal_bar.modulate = _seal_tint(
-		hiruko_state.chains_current, HirukoCombatStateModel.CHAINS_MAX
-	)
-	wrapper_seal_bar.modulate = _seal_tint(
-		hiruko_state.wrapper_current, HirukoCombatStateModel.WRAPPER_MAX
-	)
-
-
-func _refresh_jukain_ui() -> void:
-	if jukain_state == null or jukain_unit == null:
-		jukain_state_label.text = "UNAVAILABLE"
-		jukain_atk_label.text = "Effective ATK —  •  Real ATK —"
+	var unit := _get_selected_inspector_unit()
+	if unit == null:
+		inspector_selection_label.text = "INSPECTING: UNAVAILABLE"
+		inspector_details_label.text = "No allied fixture is available."
 		return
-	jukain_state_label.text = jukain_state.get_state_label()
-	jukain_atk_label.text = "Effective ATK %d  •  Real ATK %d" % [
-		jukain_state.get_effective_atk(jukain_unit.atk),
-		jukain_unit.atk,
+
+	inspector_selection_label.text = "INSPECTING: %s" % unit.display_name.to_upper()
+	var inspecting_hiruko := unit == hiruko_unit
+	var inspecting_jukain := unit == jukain_unit
+	break_chains_button.visible = inspecting_hiruko
+	break_wrapper_button.visible = inspecting_hiruko
+	reset_hiruko_button.visible = inspecting_hiruko
+	unlock_jukain_button.visible = inspecting_jukain
+	reset_jukain_button.visible = inspecting_jukain
+
+	if inspecting_hiruko:
+		inspector_details_label.text = _get_hiruko_inspector_text()
+	elif inspecting_jukain:
+		inspector_details_label.text = _get_jukain_inspector_text()
+	else:
+		inspector_details_label.text = _get_generic_inspector_text(unit)
+	inspector_details_label.scroll_to_line(0)
+
+
+func _get_hiruko_inspector_text() -> String:
+	var aura_label := (
+		"ACTIVE"
+		if hiruko_state.get_state() == HirukoCombatStateModel.State.LAEVATAIN
+		else "INACTIVE"
+	)
+	return "\n".join([
+		"HIRUKO  •  HP %d/%d  •  Line %s%s" % [
+			hiruko_unit.current_hp,
+			hiruko_unit.max_hp,
+			BattleUnitModel.line_name(hiruko_unit.line).to_upper(),
+			"  •  DEFEATED" if hiruko_unit.defeated else "",
+		],
+		"State: %s" % hiruko_state.get_state_label(),
+		"Seal [Chains]: %s  •  Seal [Wrapper]: %s" % [
+			_seal_value_text(hiruko_state.chains_current, HirukoCombatStateModel.CHAINS_MAX),
+			_seal_value_text(hiruko_state.wrapper_current, HirukoCombatStateModel.WRAPPER_MAX),
+		],
+		_get_hiruko_profile_text(),
+		"Burn: %s  •  Aura: %s" % [
+			("%d tick(s)" % _get_burn_ticks(hiruko_unit)) if _get_burn_ticks(hiruko_unit) > 0 else "NONE",
+			aura_label,
+		],
+	])
+
+
+func _get_jukain_inspector_text() -> String:
+	var lines: Array[String] = [
+		"JUKAIN  •  HP %d/%d  •  Line %s%s" % [
+			jukain_unit.current_hp,
+			jukain_unit.max_hp,
+			BattleUnitModel.line_name(jukain_unit.line).to_upper(),
+			"  •  DEFEATED" if jukain_unit.defeated else "",
+		],
+		"State: %s  •  Effective ATK %d  •  Real ATK %d" % [
+			jukain_state.get_state_label(),
+			jukain_state.get_effective_atk(jukain_unit.atk),
+			jukain_unit.atk,
+		],
 	]
-	jukain_atk_label.tooltip_text = jukain_atk_label.text
+	match jukain_prescript.phase:
+		JukainPrescriptStateModel.Phase.ORIGINAL_ACTIVE:
+			lines.append("PRESCRIPT: %s" % JukainPrescriptStateModel.ORIGINAL_REQUIREMENT)
+			lines.append("STATUS: ACTIVE  •  KARMA: %d" % jukain_prescript.karma_stacks)
+		JukainPrescriptStateModel.Phase.DEFY_REPLACEMENT_ACTIVE:
+			lines.append("ORIGINAL: DEFIED  •  KARMA: %d %s" % [
+				jukain_prescript.karma_stacks,
+				jukain_prescript.get_karma_multiplier_label(),
+			])
+			lines.append("REPLACEMENT: %s" % JukainPrescriptStateModel.REPLACEMENT_REQUIREMENT)
+		_:
+			lines.append("RESOLVED: %s  •  KARMA: %d" % [
+				jukain_prescript.get_route_label(), jukain_prescript.karma_stacks
+			])
+	lines.append("UNLOCK INTEGRATION: M5.3  •  FORM CHAIN: NOT AVAILABLE")
+	return "\n".join(lines)
+
+
+func _get_generic_inspector_text(unit: BattleUnit) -> String:
+	return "\n".join([
+		unit.display_name.to_upper(),
+		"HP %d/%d  •  ATK %d  •  SPD %d" % [
+			unit.current_hp, unit.max_hp, unit.atk, unit.spd
+		],
+		"Line: %s" % BattleUnitModel.line_name(unit.line).to_upper(),
+		"Status: %s" % ("DEFEATED" if unit.defeated else "ALIVE"),
+	])
 
 
 func _get_hiruko_profile_text() -> String:
@@ -1139,14 +1349,6 @@ func _get_hiruko_profile_text() -> String:
 
 func _seal_value_text(current: int, maximum: int) -> String:
 	return "BROKEN" if current == 0 else "%d/%d" % [current, maximum]
-
-
-func _seal_tint(current: int, maximum: int) -> Color:
-	if current == 0:
-		return Color("d4858f")
-	if current < maximum:
-		return Color("f2c879")
-	return Color("78b7d0")
 
 
 func _all_line_containers() -> Array[Control]:
@@ -1211,6 +1413,9 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	elif _is_current_target_choice(unit):
 		style.border_color = Color("f2c879")
 		style.set_border_width_all(4)
+	elif unit.team == BattleUnitModel.Team.PARTY and unit.stable_id == selected_inspector_unit_id:
+		style.border_color = Color("b9a0e8")
+		style.set_border_width_all(3)
 	style.set_corner_radius_all(8)
 	style.content_margin_left = 5.0
 	style.content_margin_top = 2.0
@@ -1248,9 +1453,11 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 			state_label.text += " [BURN %d]" % burn_ticks
 		state_label.add_theme_color_override("font_color", Color("f2c879"))
 		card.tooltip_text += "\nClick to target %s" % unit.display_name
-		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		card.mouse_filter = Control.MOUSE_FILTER_STOP
-		card.gui_input.connect(_on_target_card_input.bind(unit.stable_id))
+	elif unit.team == BattleUnitModel.Team.PARTY and unit.stable_id == selected_inspector_unit_id:
+		state_label.text = "INSPECTED"
+		if burn_ticks > 0:
+			state_label.text += " [BURN %d]" % burn_ticks
+		state_label.add_theme_color_override("font_color", Color("b9a0e8"))
 	elif unit == hiruko_unit and hiruko_state != null:
 		state_label.text = hiruko_state.get_state_label()
 		if burn_ticks > 0:
@@ -1294,6 +1501,10 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	stats_label.add_theme_font_size_override("font_size", 11)
 	stats_label.add_theme_color_override("font_color", Color("c9d6e2"))
 	details.add_child(stats_label)
+	if unit.team == BattleUnitModel.Team.PARTY or _is_current_target_choice(unit):
+		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		card.mouse_filter = Control.MOUSE_FILTER_STOP
+		card.gui_input.connect(_on_unit_card_input.bind(unit.stable_id))
 	return card
 
 
@@ -1306,7 +1517,7 @@ func _position_unit_card(card: Control, slot: int) -> void:
 	card.offset_bottom = card.offset_top + UNIT_CARD_HEIGHT
 
 
-func _on_target_card_input(event: InputEvent, target_id: StringName) -> void:
+func _on_unit_card_input(event: InputEvent, unit_id: StringName) -> void:
 	if (
 		event is InputEventMouseButton
 		and event.button_index == MOUSE_BUTTON_LEFT
@@ -1314,9 +1525,11 @@ func _on_target_card_input(event: InputEvent, target_id: StringName) -> void:
 	):
 		get_viewport().set_input_as_handled()
 		if selected_hiruko_skill != HirukoSkill.NONE:
-			select_hiruko_skill_target(target_id)
-		else:
-			select_attack_target(target_id)
+			select_hiruko_skill_target(unit_id)
+		elif selecting_target:
+			select_attack_target(unit_id)
+		elif not selecting_move and not selecting_skill and ally_attack_confirmation_target_id == &"":
+			select_inspector_unit(unit_id)
 
 
 func _is_current_target_choice(unit: BattleUnit) -> bool:

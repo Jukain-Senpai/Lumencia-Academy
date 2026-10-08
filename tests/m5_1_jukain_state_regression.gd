@@ -61,8 +61,10 @@ func _test_roster_initial_state_and_ui() -> void:
 	_check(scene.jukain_state.get_state() == JukainCombatStateModel.State.LOCKED, "Jukain did not start LOCKED")
 	_check(scene.jukain_state.get_effective_atk(scene.jukain_unit.atk) == 1, "Initial effective ATK is not 1")
 	_check(scene.jukain_unit.atk == 9, "Initial real ATK was overwritten")
-	_check(scene.get_node("%JukainStateLabel").text == "LOCKED", "Visible Jukain state does not say LOCKED")
-	_check(scene.get_node("%JukainAtkLabel").text == "Effective ATK 1  •  Real ATK 9", "Visible Jukain ATK values are incorrect")
+	_check(scene.select_inspector_unit(&"party_2"), "Jukain could not be selected in the M5.2 shared inspector")
+	var inspector_text: String = scene.get_node("%InspectorDetailsLabel").text
+	_check("State: LOCKED" in inspector_text, "Visible Jukain state does not say LOCKED")
+	_check("Effective ATK 1" in inspector_text and "Real ATK 9" in inspector_text, "Visible Jukain ATK values are incorrect")
 	await _free_scene(scene)
 
 
@@ -147,9 +149,9 @@ func _test_absent_future_mechanics() -> void:
 	var scene := await _new_scene(false)
 	if scene == null:
 		return
-	_check(scene.get_node_or_null("%PrescriptPendingLabel") != null and scene.get_node("%PrescriptPendingLabel").text == "PRESCRIPT: PENDING M5.2", "Prescript placeholder is missing or claims implementation")
-	_check(scene.get_node_or_null("%FormChainUnavailableLabel") != null and scene.get_node("%FormChainUnavailableLabel").text == "FORM CHAIN: NOT AVAILABLE", "Form Chain absence is not explicit")
-	_check(scene.get_node_or_null("%PrescriptButton") == null, "A functional Prescript control exists in M5.1")
+	_check(scene.select_inspector_unit(&"party_2"), "Jukain inspector could not be selected")
+	_check("UNLOCK INTEGRATION: M5.3" in scene.get_node("%InspectorDetailsLabel").text, "M5.2 does not preserve the M5.3 unlock boundary")
+	_check("FORM CHAIN: NOT AVAILABLE" in scene.get_node("%InspectorDetailsLabel").text, "Form Chain absence is not explicit")
 	_check(scene.get_node_or_null("%FormChainButton") == null, "A functional Form Chain control exists in M5.1")
 	await _free_scene(scene)
 
@@ -181,7 +183,9 @@ func _test_layout_and_five_card_capacity() -> void:
 		return
 	await process_frame
 	_check(scene.get_node("Margin/Layout").size.y <= 624.0, "M5.1 content exceeds safe 1152x648 height")
-	_check(_inside_viewport(scene.get_node("%JukainStateLabel")) and _inside_viewport(scene.get_node("%ResetJukainButton")), "Jukain state/debug UI is outside 1152x648")
+	_check(scene.select_inspector_unit(&"party_2"), "Jukain inspector could not be selected for layout")
+	await process_frame
+	_check(_inside_viewport(scene.get_node("%CharacterInspector")) and _inside_viewport(scene.get_node("%ResetJukainButton")), "Jukain shared inspector/debug UI is outside 1152x648")
 	var battlefield: Control = scene.get_node("Margin/Layout/Battlefield")
 	var stable_height := battlefield.size.y
 	for index: int in 5:

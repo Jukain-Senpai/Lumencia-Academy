@@ -150,7 +150,7 @@ func _test_completed_action_ticks() -> void:
 	_check(scene.begin_move_selection() and scene.cancel_action_selection(), "Move selection cancellation failed")
 	scene._render_battlefield()
 	_check(party_2.current_hp == hp_before and scene._get_burn_ticks(party_2) == 2, "Selection, Cancel, or rendering ticked Burn")
-	_check(scene.begin_move_selection() and scene.select_move_destination(BattleUnitModel.Line.MID), "Burned unit's Move did not resolve")
+	_check(scene.begin_move_selection() and scene.select_move_destination(BattleUnitModel.Line.FRONT), "Burned unit's Move did not resolve")
 	_check(party_2.current_hp == hp_before - 5 and scene._get_burn_ticks(party_2) == 1, "Completed Move did not tick Burn exactly once")
 	await _free_scene(scene)
 
@@ -205,7 +205,7 @@ func _test_burn_defeat_results() -> void:
 	party_2.current_hp = 4
 	scene.burn_remaining_ticks_by_unit_id[party_2.stable_id] = 1
 	_set_current(scene, party_2)
-	_check(scene.begin_move_selection() and scene.select_move_destination(BattleUnitModel.Line.MID), "Defeat-by-Burn Move did not resolve")
+	_check(scene.begin_move_selection() and scene.select_move_destination(BattleUnitModel.Line.FRONT), "Defeat-by-Burn Move did not resolve")
 	_check(scene.battle_result == scene.BattleResult.DEFEAT, "Last ally's Burn defeat did not use existing Defeat logic")
 	_check(scene.current_unit == null and scene._get_burn_ticks(party_2) == 0, "Defeat-by-Burn retained actor or Burn state")
 	await _free_scene(scene)
@@ -295,7 +295,7 @@ func _test_restart_and_ui() -> void:
 	_check(scene.get_node("Margin/Layout").size.y <= 624.0, "M4.3 content exceeds safe 1152×648 height")
 	scene.hiruko_state.set_seals(0, 0)
 	scene._render_battlefield()
-	_check("Aura ACTIVE" in scene.get_node("%HirukoProfileLabel").text, "LAEVATAIN profile does not expose Aura ACTIVE")
+	_check("Aura ACTIVE" in _inspector_text(scene), "LAEVATAIN inspector does not expose Aura ACTIVE")
 	for index: int in 5:
 		scene.party_units[index].line = BattleUnitModel.Line.MID
 	scene.party_units[5].line = BattleUnitModel.Line.BACK
@@ -310,6 +310,7 @@ func _test_restart_and_ui() -> void:
 	scene.laevatain_aura_turn_token = "fixture-token"
 	scene.automatic_enemy_turns_enabled = true
 	scene.restart_battle()
+	_expose_hiruko(scene)
 	_check(_total_burn_entries(scene) == 0, "Restart did not clear all Burn state")
 	_check(scene.laevatain_aura_turn_token.is_empty(), "Restart did not clear the aura turn token")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.SEALED, "Restart did not restore SEALED state")
@@ -362,6 +363,7 @@ func _new_scene(automatic_enemies: bool) -> Control:
 		return null
 	root.add_child(scene)
 	active_scene = scene
+	_expose_hiruko(scene)
 	await process_frame
 	return scene
 
@@ -386,6 +388,16 @@ func _find_unit(scene: Control, id: StringName) -> BattleUnit:
 		if unit.stable_id == id:
 			return unit
 	return null
+
+
+func _expose_hiruko(scene: Control) -> void:
+	scene.hiruko_unit.line = BattleUnitModel.Line.FRONT
+	_find_unit(scene, &"party_2").line = BattleUnitModel.Line.MID
+	scene._render_battlefield()
+
+
+func _inspector_text(scene: Control) -> String:
+	return scene.get_node("%InspectorDetailsLabel").text
 
 
 func _defeat(unit: BattleUnit) -> void:

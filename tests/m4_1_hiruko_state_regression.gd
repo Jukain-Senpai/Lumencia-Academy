@@ -68,12 +68,12 @@ func _test_roster_and_initial_state() -> void:
 	var hiruko: BattleUnit = scene.hiruko_unit
 	_check(hiruko.stable_id == &"party_1", "Hiruko did not replace Party 1's stable slot")
 	_check(hiruko.current_hp == 44 and hiruko.max_hp == 44 and hiruko.atk == 10 and hiruko.spd == 14, "Hiruko did not retain Party 1's M3 stats")
-	_check(hiruko.line == BattleUnitModel.Line.FRONT and not hiruko.defeated, "Hiruko did not start living in Front")
+	_check(hiruko.line == BattleUnitModel.Line.MID and not hiruko.defeated, "Hiruko did not start living in the approved M5 Mid formation")
 	_check(scene.hiruko_state.chains_current == 100 and scene.hiruko_state.wrapper_current == 100, "Initial Seals are not full")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.SEALED, "Initial state is not SEALED")
-	_check(scene.get_node("%HirukoStateLabel").text == "SEALED", "Initial state label disagrees with authoritative state")
-	_check(scene.get_node("%ChainsSealBar").value == 100 and scene.get_node("%WrapperSealBar").value == 100, "Initial Seal bars disagree with authoritative values")
-	_check(_scene_has_text(scene, "Hiruko") and _scene_has_text(scene, "SEALED"), "Hiruko card does not visibly identify Hiruko and SEALED")
+	_check("State: SEALED" in _inspector_text(scene), "Initial inspector state disagrees with authoritative state")
+	_check("Seal [Chains]: 100/100" in _inspector_text(scene) and "Seal [Wrapper]: 100/100" in _inspector_text(scene), "Initial inspector Seal values disagree with authoritative values")
+	_check(_scene_has_text(scene, "Hiruko") and "State: SEALED" in _inspector_text(scene), "Hiruko card and inspector do not visibly identify Hiruko and SEALED")
 	await _free_scene(scene)
 
 
@@ -83,18 +83,18 @@ func _test_debug_progression_and_ui() -> void:
 		return
 	_check(scene.hiruko_state.set_seals(50, 75), "Partial Seal values were rejected by the UI fixture")
 	scene._render_battlefield()
-	_check(scene.get_node("%ChainsSealBar").value == 50 and scene.get_node("%ChainsSealValueLabel").text == "50/100", "Partial Chains UI disagrees with authoritative value")
-	_check(scene.get_node("%WrapperSealBar").value == 75 and scene.get_node("%WrapperSealValueLabel").text == "75/100", "Partial Wrapper UI disagrees with authoritative value")
-	_check(scene.get_node("%HirukoStateLabel").text == "SEALED", "Partial intact Seals did not display SEALED")
+	_check("Seal [Chains]: 50/100" in _inspector_text(scene), "Partial Chains UI disagrees with authoritative value")
+	_check("Seal [Wrapper]: 75/100" in _inspector_text(scene), "Partial Wrapper UI disagrees with authoritative value")
+	_check("State: SEALED" in _inspector_text(scene), "Partial intact Seals did not display SEALED")
 	scene.hiruko_state.reset()
 	scene._render_battlefield()
 	var before := _combat_snapshot(scene)
 	_check(scene.debug_break_chains(), "Break Chains debug path was rejected")
 	_check(scene.hiruko_state.chains_current == 0 and scene.hiruko_state.wrapper_current == 100, "Break Chains changed incorrect Seal values")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.FLAMING_SWORD, "Break Chains did not derive FLAMING_SWORD")
-	_check(scene.get_node("%HirukoStateLabel").text == "FLAMING SWORD", "FLAMING SWORD UI disagrees with state")
-	_check(scene.get_node("%ChainsSealBar").value == 0 and scene.get_node("%ChainsSealValueLabel").text == "BROKEN", "Chains UI did not show broken")
-	_check(scene.get_node("%WrapperSealBar").value == 100 and scene.get_node("%WrapperSealValueLabel").text == "100/100", "Wrapper UI changed when Chains broke")
+	_check("State: FLAMING SWORD" in _inspector_text(scene), "FLAMING SWORD UI disagrees with state")
+	_check("Seal [Chains]: BROKEN" in _inspector_text(scene), "Chains UI did not show broken")
+	_check("Seal [Wrapper]: 100/100" in _inspector_text(scene), "Wrapper UI changed when Chains broke")
 	_check(_combat_snapshot(scene) == before, "Break Chains changed HP, line, turn, queue, or battle result")
 	_check(scene.combat_log_entries.has("Seal [Chains] broken.") and scene.combat_log_entries.has("Hiruko entered FLAMING SWORD."), "Break Chains feedback was not logged")
 
@@ -102,8 +102,8 @@ func _test_debug_progression_and_ui() -> void:
 	_check(scene.debug_break_wrapper(), "Break Wrapper was rejected after Chains broke")
 	_check(scene.hiruko_state.chains_current == 0 and scene.hiruko_state.wrapper_current == 0, "Break Wrapper changed incorrect Seal values")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.LAEVATAIN, "Break Wrapper did not derive LAEVATAIN")
-	_check(scene.get_node("%HirukoStateLabel").text == "LAEVATAIN", "LAEVATAIN UI disagrees with state")
-	_check(scene.get_node("%WrapperSealBar").value == 0 and scene.get_node("%WrapperSealValueLabel").text == "BROKEN", "Wrapper UI did not show broken")
+	_check("State: LAEVATAIN" in _inspector_text(scene), "LAEVATAIN UI disagrees with state")
+	_check("Seal [Wrapper]: BROKEN" in _inspector_text(scene), "Wrapper UI did not show broken")
 	_check(_combat_snapshot(scene) == before, "Break Wrapper changed HP, line, turn, queue, or battle result")
 	_check(scene.combat_log_entries.has("Seal [Wrapper] broken.") and scene.combat_log_entries.has("Hiruko entered LAEVATAIN."), "Break Wrapper feedback was not logged")
 	await _free_scene(scene)
@@ -132,7 +132,7 @@ func _test_debug_reset() -> void:
 	_check(scene.debug_reset_hiruko(), "Reset Hiruko debug path failed")
 	_check(scene.hiruko_state.chains_current == 100 and scene.hiruko_state.wrapper_current == 100, "Debug reset did not restore both Seals")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.SEALED, "Debug reset did not derive SEALED")
-	_check(scene.get_node("%HirukoStateLabel").text == "SEALED", "Debug reset left stale state UI")
+	_check("State: SEALED" in _inspector_text(scene), "Debug reset left stale state UI")
 	_check(_combat_snapshot(scene) == before, "Debug reset changed combat state")
 	await _free_scene(scene)
 
@@ -152,11 +152,11 @@ func _test_restart() -> void:
 	await process_frame
 	_check(scene.hiruko_unit != original, "Restart retained the old Hiruko runtime object")
 	_check(scene.hiruko_unit.display_name == "Hiruko" and scene.hiruko_unit.current_hp == 44, "Restart did not restore Hiruko identity and HP")
-	_check(scene.hiruko_unit.atk == 10 and scene.hiruko_unit.spd == 14 and scene.hiruko_unit.line == BattleUnitModel.Line.FRONT, "Restart did not restore Hiruko fixture stats and line")
+	_check(scene.hiruko_unit.atk == 10 and scene.hiruko_unit.spd == 14 and scene.hiruko_unit.line == BattleUnitModel.Line.MID, "Restart did not restore Hiruko fixture stats and approved line")
 	_check(not scene.hiruko_unit.defeated, "Restart retained Hiruko defeat")
 	_check(scene.hiruko_state.chains_current == 100 and scene.hiruko_state.wrapper_current == 100, "Restart did not restore full Seals")
-	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.SEALED and scene.get_node("%HirukoStateLabel").text == "SEALED", "Restart did not restore authoritative and visible SEALED state")
-	_check(scene.party_units.size() == 6 and scene.get_node("%AllyFrontUnits").get_child_count() == 2, "Restart duplicated or lost party cards")
+	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.SEALED and "State: SEALED" in _inspector_text(scene), "Restart did not restore authoritative and visible SEALED state")
+	_check(scene.party_units.size() == 6 and scene.get_node("%AllyFrontUnits").get_child_count() == 1, "Restart duplicated or lost party cards")
 	await _free_scene(scene)
 
 
@@ -165,6 +165,7 @@ func _test_m3_actions_and_defeat() -> void:
 	if scene == null:
 		return
 	var hiruko: BattleUnit = scene.hiruko_unit
+	scene.jukain_unit.line = BattleUnitModel.Line.MID
 	_check(scene.resolve_enemy_turn(), "Enemy could not attack Hiruko through the M3 path")
 	_check(hiruko.current_hp == 41, "Hiruko did not receive the superseding M4.2 SEALED damage")
 	_check(scene.hiruko_state.chains_current == 91, "Enemy hit did not apply raw damage to Chains")
@@ -176,12 +177,13 @@ func _test_m3_actions_and_defeat() -> void:
 	scene.restart_battle()
 	scene.advance_turn()
 	hiruko = scene.hiruko_unit
-	_check(scene.begin_move_selection() and scene.select_move_destination(BattleUnitModel.Line.MID), "Hiruko could not use Move")
-	_check(hiruko.line == BattleUnitModel.Line.MID, "Hiruko Move did not change semantic line")
+	_check(scene.begin_move_selection() and scene.select_move_destination(BattleUnitModel.Line.FRONT), "Hiruko could not use Move")
+	_check(hiruko.line == BattleUnitModel.Line.FRONT, "Hiruko Move did not change semantic line")
 
 	scene.restart_battle()
 	hiruko = scene.hiruko_unit
 	hiruko.current_hp = 1
+	scene.jukain_unit.line = BattleUnitModel.Line.MID
 	_check(scene.resolve_enemy_turn(), "Enemy lethal attack against Hiruko failed")
 	_check(hiruko.current_hp == 0 and hiruko.defeated, "Hiruko did not follow normal zero-HP defeat behavior")
 	_check(not scene._is_living(hiruko), "Defeated Hiruko still occupied a semantic combat line")
@@ -290,6 +292,10 @@ func _scene_has_text(node: Node, expected: String) -> bool:
 		if _scene_has_text(child, expected):
 			return true
 	return false
+
+
+func _inspector_text(scene: Control) -> String:
+	return scene.get_node("%InspectorDetailsLabel").text
 
 
 func _inside_viewport(control: Control) -> bool:

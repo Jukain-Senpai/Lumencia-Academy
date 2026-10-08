@@ -311,7 +311,7 @@ func _test_restart_cleanup() -> void:
 	_check(scene.begin_skill_selection(), "Could not enter Skill menu before Restart")
 	scene.restart_battle()
 	_check(not scene.selecting_skill and scene.selected_hiruko_skill == scene.HirukoSkill.NONE and scene.valid_skill_targets.is_empty(), "Restart retained Skill menu state")
-	_check(scene.current_unit == _find_unit(scene, &"enemy_a") and scene.hiruko_unit.line == BattleUnitModel.Line.FRONT, "Restart did not restore actor/line fixture")
+	_check(scene.current_unit == _find_unit(scene, &"enemy_a") and scene.hiruko_unit.line == BattleUnitModel.Line.MID, "Restart did not restore the approved actor/line fixture")
 
 	_set_current(scene, scene.hiruko_unit)
 	_check(scene.begin_skill_selection() and scene.select_hiruko_skill(scene.HirukoSkill.GUT_STAB), "Could not enter skill target selection before Restart")
@@ -413,6 +413,7 @@ func _new_scene(automatic_enemies: bool) -> Control:
 		return null
 	root.add_child(scene)
 	active_scene = scene
+	_expose_hiruko(scene)
 	await process_frame
 	return scene
 
@@ -437,6 +438,12 @@ func _find_unit(scene: Control, id: StringName) -> BattleUnit:
 		if unit.stable_id == id:
 			return unit
 	return null
+
+
+func _expose_hiruko(scene: Control) -> void:
+	scene.hiruko_unit.line = BattleUnitModel.Line.FRONT
+	_find_unit(scene, &"party_2").line = BattleUnitModel.Line.MID
+	scene._render_battlefield()
 
 
 func _defeat(unit: BattleUnit) -> void:

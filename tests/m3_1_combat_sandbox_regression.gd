@@ -76,8 +76,8 @@ func _test_roster(scene: Control) -> void:
 
 
 func _test_formations(scene: Control) -> void:
-	_check(_ids_in_line(scene.party_units, BattleUnitModel.Line.FRONT) == [&"party_1", &"party_2"], "Party Front formation is incorrect")
-	_check(_ids_in_line(scene.party_units, BattleUnitModel.Line.MID) == [&"party_3", &"party_4"], "Party Mid formation is incorrect")
+	_check(_ids_in_line(scene.party_units, BattleUnitModel.Line.FRONT) == [&"party_2"], "Party Front formation is incorrect")
+	_check(_ids_in_line(scene.party_units, BattleUnitModel.Line.MID) == [&"party_1", &"party_3", &"party_4"], "Party Mid formation is incorrect")
 	_check(_ids_in_line(scene.party_units, BattleUnitModel.Line.BACK) == [&"party_5", &"party_6"], "Party Back formation is incorrect")
 	_check(_ids_in_line(scene.enemy_units, BattleUnitModel.Line.FRONT) == [&"enemy_a", &"enemy_b"], "Enemy Front formation is incorrect")
 	_check(_ids_in_line(scene.enemy_units, BattleUnitModel.Line.MID) == [&"enemy_c"], "Enemy Mid formation is incorrect")
@@ -89,7 +89,7 @@ func _test_visual_orientation(scene: Control) -> void:
 	var enemy_lines := scene.get_node("Margin/Layout/Battlefield/Enemies/Layout/Lines")
 	_check(_child_names(ally_lines) == ["Back", "Mid", "Front"], "Ally visual order must be Back / Mid / Front")
 	_check(_child_names(enemy_lines) == ["Front", "Mid", "Back"], "Enemy visual order must be Front / Mid / Back")
-	_check(scene.get_node("%AllyFrontUnits").get_child_count() == 2, "Ally Front did not render two cards")
+	_check(scene.get_node("%AllyFrontUnits").get_child_count() == 1, "Ally Front did not render one card")
 	_check(scene.get_node("%EnemyFrontUnits").get_child_count() == 2, "Enemy Front did not render two cards")
 
 
@@ -102,7 +102,7 @@ func _test_restart(scene: Control) -> void:
 	await process_frame
 	var restored: BattleUnit = scene.party_units[0]
 	_check(restored.current_hp == restored.max_hp, "Restart did not restore HP")
-	_check(restored.line == BattleUnitModel.Line.FRONT, "Restart did not restore line")
+	_check(restored.line == BattleUnitModel.Line.MID, "Restart did not restore line")
 	_check(not restored.defeated, "Restart did not restore defeated=false")
 	_check(restored != original, "Restart did not rebuild clean runtime state")
 

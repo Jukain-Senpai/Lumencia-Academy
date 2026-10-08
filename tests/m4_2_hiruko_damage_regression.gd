@@ -66,7 +66,7 @@ func _test_opening_sealed_hit() -> void:
 	_check(scene.hiruko_state.chains_current == 91, "Opening raw 9 did not reduce Chains by exactly 9")
 	_check(scene.hiruko_state.wrapper_current == 100, "Opening hit incorrectly damaged Wrapper")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.SEALED, "Opening hit changed state unexpectedly")
-	_check(scene.get_node("%ChainsSealBar").value == 91 and scene.get_node("%ChainsSealValueLabel").text == "91/100", "Opening hit did not immediately update partial Chains UI")
+	_check("Seal [Chains]: 91/100" in _inspector_text(scene), "Opening hit did not immediately update partial Chains UI")
 	_check(scene.combat_log_entries.has("Enemy A attacks Hiruko for 9 raw damage."), "Opening raw damage was not logged")
 	_check(scene.combat_log_entries.has("Hiruko resists 70% and takes 3 damage."), "Opening resistance was not logged")
 	_check(scene.combat_log_entries.has("Seal [Chains]: 100 → 91."), "Opening Seal damage was not logged")
@@ -84,9 +84,9 @@ func _test_chain_break_state_at_start_and_no_overflow() -> void:
 	_check(scene.hiruko_state.chains_current == 0, "Chain-breaking hit did not clamp Chains to zero")
 	_check(scene.hiruko_state.wrapper_current == 100, "Chain damage overflowed into Wrapper")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.FLAMING_SWORD, "Chain break did not derive FLAMING SWORD")
-	_check(scene.get_node("%HirukoStateLabel").text == "FLAMING SWORD", "Natural Chain break left stale state UI")
-	_check(scene.get_node("%ChainsSealValueLabel").text == "BROKEN", "Natural Chain break did not show BROKEN")
-	_check(scene.get_node("%HirukoProfileLabel").text == "DR 35%  •  Basic SLASH ×1.2", "Natural Chain break did not update the combat profile")
+	_check("State: FLAMING SWORD" in _inspector_text(scene), "Natural Chain break left stale state UI")
+	_check("Seal [Chains]: BROKEN" in _inspector_text(scene), "Natural Chain break did not show BROKEN")
+	_check("DR 35%  •  Basic SLASH ×1.2" in _inspector_text(scene), "Natural Chain break did not update the combat profile")
 	_check(scene.combat_log_entries.has("Seal [Chains] is broken.") and scene.combat_log_entries.has("Hiruko enters FLAMING SWORD."), "Natural Chain transition feedback is incomplete")
 	await _free_scene(scene)
 
@@ -110,8 +110,8 @@ func _test_flaming_hits_and_wrapper_break() -> void:
 	_check(scene.hiruko_unit.current_hp == 38, "Wrapper-breaking hit did not use FLAMING SWORD resistance captured at hit start")
 	_check(scene.hiruko_state.wrapper_current == 0 and scene.hiruko_state.chains_current == 0, "Wrapper-breaking hit did not clamp only Wrapper")
 	_check(scene.hiruko_state.get_state() == HirukoCombatStateModel.State.LAEVATAIN, "Wrapper break did not derive LAEVATAIN")
-	_check(scene.get_node("%HirukoStateLabel").text == "LAEVATAIN" and scene.get_node("%WrapperSealValueLabel").text == "BROKEN", "Natural Wrapper break left stale UI")
-	_check(scene.get_node("%HirukoProfileLabel").text == "DR 0%  •  Basic SLASH ×1.4  •  Aura ACTIVE", "Natural Wrapper break did not update the combat profile")
+	_check("State: LAEVATAIN" in _inspector_text(scene) and "Seal [Wrapper]: BROKEN" in _inspector_text(scene), "Natural Wrapper break left stale UI")
+	_check("DR 0%  •  Basic SLASH ×1.4  •  Aura ACTIVE" in _inspector_text(scene), "Natural Wrapper break did not update the combat profile")
 	_check(scene.combat_log_entries.has("Seal [Wrapper] is broken.") and scene.combat_log_entries.has("Hiruko enters LAEVATAIN."), "Natural Wrapper transition feedback is incomplete")
 	await _free_scene(scene)
 
@@ -194,6 +194,7 @@ func _test_restart_and_opening_callback() -> void:
 		return
 	root.add_child(scene)
 	active_scene = scene
+	_expose_hiruko(scene)
 	_check(scene.hiruko_unit.current_hp == 44 and scene.hiruko_state.chains_current == 100, "Fresh Restart fixture was not built before deferred enemy processing")
 	await process_frame
 	await process_frame
@@ -205,9 +206,10 @@ func _test_restart_and_opening_callback() -> void:
 	scene.hiruko_unit.defeated = true
 	scene.hiruko_state.set_seals(0, 0)
 	scene.restart_battle()
+	_expose_hiruko(scene)
 	await process_frame
 	await process_frame
-	_check(scene.hiruko_unit.current_hp == 41 and scene.hiruko_unit.line == BattleUnitModel.Line.FRONT and not scene.hiruko_unit.defeated, "Restart did not restore fixture then apply one opening hit")
+	_check(scene.hiruko_unit.current_hp == 41 and scene.hiruko_unit.line == BattleUnitModel.Line.FRONT and not scene.hiruko_unit.defeated, "Controlled post-Restart exposure did not apply one opening hit")
 	_check(scene.hiruko_state.chains_current == 91 and scene.hiruko_state.wrapper_current == 100, "Restart did not restore Seals then apply one opening hit")
 	_check(_log_count(scene, "Enemy A attacks Hiruko for 9 raw damage.") == 1, "Restart produced duplicate opening enemy hits")
 	await _free_scene(scene)
@@ -243,8 +245,8 @@ func _test_layout() -> void:
 	scene._render_battlefield()
 	await process_frame
 	_check(scene.get_node("Margin/Layout").size.y <= 624.0, "M4.2 content exceeds safe 1152x648 height (%s px)" % scene.get_node("Margin/Layout").size.y)
-	_check(_inside_viewport(scene.get_node("%HirukoProfileLabel")) and _inside_viewport(scene.get_node("%ResetHirukoButton")), "M4.2 profile/debug controls are outside 1152x648")
-	_check(scene.get_node("%ChainsSealValueLabel").text == "50/100", "Partial Seal presentation did not survive M4.2 UI changes")
+	_check(_inside_viewport(scene.get_node("%CharacterInspector")) and _inside_viewport(scene.get_node("%ResetHirukoButton")), "M4.2 shared inspector/debug controls are outside 1152x648")
+	_check("Seal [Chains]: 50/100" in _inspector_text(scene), "Partial Seal presentation did not survive M5.2 inspector changes")
 	var battlefield: Control = scene.get_node("Margin/Layout/Battlefield")
 	var stable_height := battlefield.size.y
 	for index: int in 5:
@@ -277,8 +279,19 @@ func _new_scene(automatic_enemies: bool) -> Control:
 		return null
 	root.add_child(scene)
 	active_scene = scene
+	_expose_hiruko(scene)
 	await process_frame
 	return scene
+
+
+func _expose_hiruko(scene: Control) -> void:
+	scene.hiruko_unit.line = BattleUnitModel.Line.FRONT
+	scene.jukain_unit.line = BattleUnitModel.Line.MID
+	scene._render_battlefield()
+
+
+func _inspector_text(scene: Control) -> String:
+	return scene.get_node("%InspectorDetailsLabel").text
 
 
 func _free_scene(scene: Control) -> void:
