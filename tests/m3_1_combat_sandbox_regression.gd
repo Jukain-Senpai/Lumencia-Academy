@@ -93,13 +93,13 @@ func _test_visual_orientation(scene: Control) -> void:
 
 
 func _test_restart(scene: Control) -> void:
-	var original := scene.party_units[0]
+	var original: BattleUnit = scene.party_units[0]
 	original.current_hp = 1
 	original.line = BattleUnitModel.Line.BACK
 	original.defeated = true
 	scene.restart_battle()
 	await process_frame
-	var restored := scene.party_units[0]
+	var restored: BattleUnit = scene.party_units[0]
 	_check(restored.current_hp == restored.max_hp, "Restart did not restore HP")
 	_check(restored.line == BattleUnitModel.Line.FRONT, "Restart did not restore line")
 	_check(not restored.defeated, "Restart did not restore defeated=false")

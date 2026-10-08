@@ -14,9 +14,9 @@ corner_radius_top_right = 10
 corner_radius_bottom_right = 10
 corner_radius_bottom_left = 10
 content_margin_left = 14.0
-content_margin_top = 14.0
+content_margin_top = 10.0
 content_margin_right = 14.0
-content_margin_bottom = 14.0
+content_margin_bottom = 10.0
 
 [sub_resource type="StyleBoxFlat" id="Style_restart"]
 bg_color = Color(0.18, 0.28, 0.38, 1)
@@ -41,9 +41,9 @@ corner_radius_top_right = 7
 corner_radius_bottom_right = 7
 corner_radius_bottom_left = 7
 content_margin_left = 8.0
-content_margin_top = 8.0
+content_margin_top = 6.0
 content_margin_right = 8.0
-content_margin_bottom = 8.0
+content_margin_bottom = 6.0
 
 [node name="BattleSandbox" type="Control"]
 layout_mode = 3
@@ -72,13 +72,13 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/margin_left = 24
-theme_override_constants/margin_top = 20
+theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 20
+theme_override_constants/margin_bottom = 12
 
 [node name="Layout" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
-theme_override_constants/separation = 14
+theme_override_constants/separation = 8
 
 [node name="Header" type="HBoxContainer" parent="Margin/Layout"]
 layout_mode = 2
@@ -92,12 +92,12 @@ theme_override_constants/separation = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
 theme_override_font_sizes/font_size = 28
-text = "M3.1  •  Combat Formation Sandbox"
+text = "M3.2  •  Round & Turn Queue Sandbox"
 
 [node name="Subtitle" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
-text = "Runtime fixtures only — no turns, attacks, or targeting yet"
+text = "Deterministic turn-engine test — no actions, targeting, or damage"
 
 [node name="RestartButton" type="Button" parent="Margin/Layout/Header"]
 unique_name_in_owner = true
@@ -118,7 +118,7 @@ theme_override_styles/panel = SubResource("Style_side")
 
 [node name="Layout" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 6
 
 [node name="Heading" type="Label" parent="Margin/Layout/Battlefield/Allies/Layout"]
 layout_mode = 2
@@ -130,7 +130,7 @@ horizontal_alignment = 1
 [node name="Lines" type="HBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Back" type="PanelContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines"]
 layout_mode = 2
@@ -139,7 +139,7 @@ theme_override_styles/panel = SubResource("Style_line")
 
 [node name="Layout" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Back"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Label" type="Label" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Back/Layout"]
 layout_mode = 2
@@ -149,7 +149,7 @@ horizontal_alignment = 1
 [node name="AllyBackUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Back/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Mid" type="PanelContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines"]
 layout_mode = 2
@@ -158,7 +158,7 @@ theme_override_styles/panel = SubResource("Style_line")
 
 [node name="Layout" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Mid"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Label" type="Label" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Mid/Layout"]
 layout_mode = 2
@@ -168,7 +168,7 @@ horizontal_alignment = 1
 [node name="AllyMidUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Mid/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Front" type="PanelContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines"]
 layout_mode = 2
@@ -177,7 +177,7 @@ theme_override_styles/panel = SubResource("Style_line")
 
 [node name="Layout" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Front"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Label" type="Label" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Front/Layout"]
 layout_mode = 2
@@ -187,7 +187,7 @@ horizontal_alignment = 1
 [node name="AllyFrontUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Allies/Layout/Lines/Front/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Divider" type="VBoxContainer" parent="Margin/Layout/Battlefield"]
 custom_minimum_size = Vector2(42, 0)
@@ -218,7 +218,7 @@ theme_override_styles/panel = SubResource("Style_side")
 
 [node name="Layout" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 6
 
 [node name="Heading" type="Label" parent="Margin/Layout/Battlefield/Enemies/Layout"]
 layout_mode = 2
@@ -230,7 +230,7 @@ horizontal_alignment = 1
 [node name="Lines" type="HBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Front" type="PanelContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines"]
 layout_mode = 2
@@ -239,7 +239,7 @@ theme_override_styles/panel = SubResource("Style_line")
 
 [node name="Layout" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Front"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Label" type="Label" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Front/Layout"]
 layout_mode = 2
@@ -249,7 +249,7 @@ horizontal_alignment = 1
 [node name="EnemyFrontUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Front/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Mid" type="PanelContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines"]
 layout_mode = 2
@@ -258,7 +258,7 @@ theme_override_styles/panel = SubResource("Style_line")
 
 [node name="Layout" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Mid"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Label" type="Label" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Mid/Layout"]
 layout_mode = 2
@@ -268,7 +268,7 @@ horizontal_alignment = 1
 [node name="EnemyMidUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Mid/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Back" type="PanelContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines"]
 layout_mode = 2
@@ -277,7 +277,7 @@ theme_override_styles/panel = SubResource("Style_line")
 
 [node name="Layout" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Back"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
 [node name="Label" type="Label" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Back/Layout"]
 layout_mode = 2
@@ -287,7 +287,92 @@ horizontal_alignment = 1
 [node name="EnemyBackUnits" type="VBoxContainer" parent="Margin/Layout/Battlefield/Enemies/Layout/Lines/Back/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
+
+[node name="TurnDebugPanel" type="PanelContainer" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Style_side")
+
+[node name="Layout" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="TurnStatus" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="RoundRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RoundHeading" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/RoundRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
+text = "ROUND"
+
+[node name="RoundLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/RoundRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
+theme_override_font_sizes/font_size = 20
+text = "Round —"
+
+[node name="CurrentRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="CurrentHeading" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/CurrentRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
+text = "CURRENT TURN"
+
+[node name="CurrentTurnLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/CurrentRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "—"
+
+[node name="TurnOrderHeading" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
+text = "CURRENT ROUND ORDER"
+
+[node name="TurnOrderLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "—"
+autowrap_mode = 2
+
+[node name="AdvanceTurnButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Advance Turn  [DEBUG]"
+
+[node name="LogColumn" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="Heading" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/LogColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
+text = "COMBAT LOG"
+
+[node name="CombatLog" type="RichTextLabel" parent="Margin/Layout/TurnDebugPanel/Layout/LogColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(0.78, 0.82, 0.88, 1)
+text = "Battle log initializes when the scene starts."
+scroll_active = true
+scroll_following = true
 
 [node name="Footer" type="HBoxContainer" parent="Margin/Layout"]
 layout_mode = 2

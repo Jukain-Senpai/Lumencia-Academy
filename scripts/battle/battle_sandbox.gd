@@ -1,6 +1,6 @@
 extends Control
 
-## M3.1-only battle sandbox. Owns its fixture state and presentation locally.
+## Milestone 3 battle sandbox. Owns fixture, round, and turn state locally.
 
 const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
 
@@ -22,14 +22,25 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 ]
 
 @onready var restart_button: Button = %RestartButton
+@onready var advance_turn_button: Button = %AdvanceTurnButton
 @onready var status_label: Label = %StatusLabel
+@onready var round_label: Label = %RoundLabel
+@onready var current_turn_label: Label = %CurrentTurnLabel
+@onready var turn_order_label: Label = %TurnOrderLabel
+@onready var combat_log_label: RichTextLabel = %CombatLog
 
 var party_units: Array[BattleUnit] = []
 var enemy_units: Array[BattleUnit] = []
+var round_number := 0
+var turn_queue: Array[BattleUnit] = []
+var turn_index := -1
+var current_unit: BattleUnit = null
+var combat_log_entries: Array[String] = []
 
 
 func _ready() -> void:
 	restart_button.pressed.connect(restart_battle)
+	advance_turn_button.pressed.connect(advance_turn)
 	restart_battle()
 
 
@@ -47,8 +58,103 @@ func restart_battle() -> void:
 	party_units.assign(rebuilt_party)
 	enemy_units.assign(rebuilt_enemies)
 	_render_battlefield()
-	status_label.text = "Formation ready — combat actions begin in M3.2."
+	_reset_turn_state()
+	_append_combat_log("Battle started.")
+	_start_round()
+	status_label.text = "Turn-engine test active — no combat actions yet."
 	restart_button.release_focus()
+	advance_turn_button.release_focus()
+
+
+func advance_turn() -> void:
+	if current_unit == null:
+		push_error("Cannot advance the sandbox turn without a current actor.")
+		return
+	_activate_next_living_turn()
+	advance_turn_button.release_focus()
+
+
+func _reset_turn_state() -> void:
+	round_number = 0
+	turn_queue.clear()
+	turn_index = -1
+	current_unit = null
+	combat_log_entries.clear()
+	combat_log_label.clear()
+	_refresh_turn_ui()
+
+
+func _start_round() -> void:
+	round_number += 1
+	turn_queue = _build_turn_queue(party_units + enemy_units)
+	turn_index = -1
+	current_unit = null
+
+	if turn_queue.is_empty():
+		push_error("Cannot start Round %d: the living-unit turn queue is empty." % round_number)
+		status_label.text = "Turn queue error — check the debugger."
+		_refresh_turn_ui()
+		return
+
+	_append_combat_log("Round %d started." % round_number)
+	_activate_next_living_turn()
+
+
+func _build_turn_queue(units: Array) -> Array[BattleUnit]:
+	var queue: Array[BattleUnit] = []
+	for unit: BattleUnit in units:
+		if _is_living(unit):
+			queue.append(unit)
+
+	# Temporary M3 tie-break: ascending stable ID after descending SPD.
+	queue.sort_custom(
+		func(first: BattleUnit, second: BattleUnit) -> bool:
+			if first.spd == second.spd:
+				return String(first.stable_id) < String(second.stable_id)
+			return first.spd > second.spd
+	)
+
+	if not _has_unique_ids(queue):
+		push_error("A round queue cannot contain duplicate unit references or IDs.")
+		return []
+	return queue
+
+
+func _activate_next_living_turn() -> void:
+	current_unit = null
+	while turn_index + 1 < turn_queue.size():
+		turn_index += 1
+		var candidate := turn_queue[turn_index]
+		if not _is_living(candidate):
+			_append_combat_log("%s is defeated and skips their turn." % candidate.display_name)
+			continue
+
+		current_unit = candidate
+		_append_combat_log("%s's turn." % current_unit.display_name)
+		_refresh_turn_ui()
+		return
+
+	_start_round()
+
+
+func _is_living(unit: BattleUnit) -> bool:
+	return not unit.defeated and unit.current_hp > 0
+
+
+func _append_combat_log(message: String) -> void:
+	combat_log_entries.append(message)
+	combat_log_label.text = "\n".join(combat_log_entries)
+	combat_log_label.scroll_to_line(maxi(0, combat_log_label.get_line_count() - 1))
+
+
+func _refresh_turn_ui() -> void:
+	round_label.text = "Round %d" % round_number if round_number > 0 else "Round —"
+	current_turn_label.text = current_unit.display_name if current_unit != null else "—"
+	var order_names: PackedStringArray = []
+	for unit: BattleUnit in turn_queue:
+		order_names.append(unit.display_name)
+	turn_order_label.text = " → ".join(order_names) if not order_names.is_empty() else "—"
+	advance_turn_button.disabled = current_unit == null
 
 
 func _build_units(fixtures: Array[Dictionary], expected_team: BattleUnit.Team) -> Array[BattleUnit]:
@@ -84,6 +190,7 @@ func _has_unique_ids(units: Array[BattleUnit]) -> bool:
 func _render_battlefield() -> void:
 	for container: VBoxContainer in _all_line_containers():
 		for child: Node in container.get_children():
+			container.remove_child(child)
 			child.queue_free()
 
 	for unit: BattleUnit in party_units + enemy_units:
@@ -125,7 +232,7 @@ func _line_container_for(team: BattleUnit.Team, line: BattleUnit.Line) -> VBoxCo
 
 func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(132, 112)
+	card.custom_minimum_size = Vector2(132, 96)
 	card.tooltip_text = "Stable ID: %s" % unit.stable_id
 
 	var style := StyleBoxFlat.new()
@@ -133,20 +240,29 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	style.border_color = Color("78b7d0") if unit.team == BattleUnitModel.Team.PARTY else Color("d4858f")
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(8)
-	style.content_margin_left = 12.0
-	style.content_margin_top = 10.0
-	style.content_margin_right = 12.0
-	style.content_margin_bottom = 10.0
+	style.content_margin_left = 8.0
+	style.content_margin_top = 8.0
+	style.content_margin_right = 8.0
+	style.content_margin_bottom = 8.0
 	card.add_theme_stylebox_override("panel", style)
 
 	var details := VBoxContainer.new()
 	details.add_theme_constant_override("separation", 3)
 	card.add_child(details)
 
+	var identity_row := HBoxContainer.new()
+	details.add_child(identity_row)
+
 	var name_label := Label.new()
 	name_label.text = unit.display_name
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.add_theme_font_size_override("font_size", 18)
-	details.add_child(name_label)
+	identity_row.add_child(name_label)
+
+	var line_label := Label.new()
+	line_label.text = BattleUnitModel.line_name(unit.line).to_upper()
+	line_label.add_theme_color_override("font_color", Color("f2c879"))
+	identity_row.add_child(line_label)
 
 	var hp_label := Label.new()
 	hp_label.text = "HP  %d / %d" % [unit.current_hp, unit.max_hp]
@@ -156,9 +272,4 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 	stats_label.text = "ATK %d     SPD %d" % [unit.atk, unit.spd]
 	stats_label.add_theme_color_override("font_color", Color("c9d6e2"))
 	details.add_child(stats_label)
-
-	var line_label := Label.new()
-	line_label.text = BattleUnitModel.line_name(unit.line).to_upper()
-	line_label.add_theme_color_override("font_color", Color("f2c879"))
-	details.add_child(line_label)
 	return card
