@@ -157,12 +157,12 @@ func _test_generic_damage_and_sealed_defeat() -> void:
 	var scene := await _new_scene(false)
 	if scene == null:
 		return
-	var party_2 := _find_unit(scene, &"party_2")
+	var party_3 := _find_unit(scene, &"party_3")
 	var enemy_a := _find_unit(scene, &"enemy_a")
-	_set_current(scene, party_2)
+	_set_current(scene, party_3)
 	var hp_before: int = enemy_a.current_hp
-	_check(scene.begin_attack_selection() and scene.select_attack_target(&"enemy_a"), "Generic Party 2 attack did not resolve")
-	_check(hp_before - enemy_a.current_hp == party_2.atk and party_2.atk == 9, "Generic Basic Attack no longer deals exactly ATK")
+	_check(scene.begin_attack_selection() and scene.select_attack_target(&"enemy_a"), "Generic Party 3 attack did not resolve")
+	_check(hp_before - enemy_a.current_hp == party_3.atk and party_3.atk == 8, "Generic Basic Attack no longer deals exactly ATK")
 	await _free_scene(scene)
 
 	scene = await _new_scene(false)

@@ -240,7 +240,7 @@ func _test_natural_activation_order_and_scope() -> void:
 	var aura_index := _log_index_containing(scene, "Laevatain activation aura")
 	var tick_index := _log_index_containing(scene, "Enemy B takes 5 Burn damage.")
 	_check(transition_index >= 0 and transition_index < aura_index and aura_index < tick_index, "Natural activation log/order is not transition → aura → attacker Burn tick")
-	_check(_log_contains(scene, "Party 2") and _log_contains(scene, "Enemy C"), "Grouped activation aura log does not identify affected units")
+	_check(_log_contains(scene, "Jukain") and _log_contains(scene, "Enemy C"), "Grouped activation aura log does not identify affected units")
 	await _free_scene(scene)
 
 

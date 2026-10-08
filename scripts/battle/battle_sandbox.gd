@@ -1,12 +1,14 @@
 extends Control
 
-## Milestone 4 battle sandbox. Owns fixture, round, turn, and Hiruko prototype state locally.
+## Milestone 5.1 battle sandbox. Owns fixture, round, turn, and character state locally.
 
 const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
 const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_state.gd")
+const JukainCombatStateModel := preload("res://scripts/battle/jukain_combat_state.gd")
 const UNIT_CARD_HEIGHT := 44.0
 const UNIT_CARD_GAP := 2.0
 const HIRUKO_UNIT_ID: StringName = &"party_1"
+const JUKAIN_UNIT_ID: StringName = &"party_2"
 const BURN_DAMAGE := 5
 const BURN_DURATION_TICKS := 2
 
@@ -22,10 +24,10 @@ enum HirukoSkill {
 	GUT_STAB,
 }
 
-# Temporary sandbox fixtures. Hiruko retains Party 1's M3 values; none are final balance.
+# Temporary sandbox fixtures. Hiruko and Jukain retain their M3 slot values; none are canon balance.
 const PARTY_FIXTURES: Array[Dictionary] = [
 	{"id": "party_1", "name": "Hiruko", "team": BattleUnitModel.Team.PARTY, "current_hp": 44, "max_hp": 44, "atk": 10, "spd": 14, "line": BattleUnitModel.Line.FRONT, "defeated": false},
-	{"id": "party_2", "name": "Party 2", "team": BattleUnitModel.Team.PARTY, "current_hp": 40, "max_hp": 40, "atk": 9, "spd": 11, "line": BattleUnitModel.Line.FRONT, "defeated": false},
+	{"id": "party_2", "name": "Jukain", "team": BattleUnitModel.Team.PARTY, "current_hp": 40, "max_hp": 40, "atk": 9, "spd": 11, "line": BattleUnitModel.Line.FRONT, "defeated": false},
 	{"id": "party_3", "name": "Party 3", "team": BattleUnitModel.Team.PARTY, "current_hp": 36, "max_hp": 36, "atk": 8, "spd": 9, "line": BattleUnitModel.Line.MID, "defeated": false},
 	{"id": "party_4", "name": "Party 4", "team": BattleUnitModel.Team.PARTY, "current_hp": 34, "max_hp": 34, "atk": 7, "spd": 7, "line": BattleUnitModel.Line.MID, "defeated": false},
 	{"id": "party_5", "name": "Party 5", "team": BattleUnitModel.Team.PARTY, "current_hp": 30, "max_hp": 30, "atk": 11, "spd": 13, "line": BattleUnitModel.Line.BACK, "defeated": false},
@@ -65,6 +67,10 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var break_chains_button: Button = %BreakChainsButton
 @onready var break_wrapper_button: Button = %BreakWrapperButton
 @onready var reset_hiruko_button: Button = %ResetHirukoButton
+@onready var jukain_state_label: Label = %JukainStateLabel
+@onready var jukain_atk_label: Label = %JukainAtkLabel
+@onready var unlock_jukain_button: Button = %UnlockJukainButton
+@onready var reset_jukain_button: Button = %ResetJukainButton
 
 var party_units: Array[BattleUnit] = []
 var enemy_units: Array[BattleUnit] = []
@@ -87,6 +93,8 @@ var enemy_action_pending := false
 var battle_generation := 0
 var hiruko_unit: BattleUnit = null
 var hiruko_state: RefCounted = null
+var jukain_unit: BattleUnit = null
+var jukain_state: RefCounted = null
 var burn_remaining_ticks_by_unit_id: Dictionary = {}
 var laevatain_aura_turn_token := ""
 
@@ -106,6 +114,8 @@ func _ready() -> void:
 	break_chains_button.pressed.connect(debug_break_chains)
 	break_wrapper_button.pressed.connect(debug_break_wrapper)
 	reset_hiruko_button.pressed.connect(debug_reset_hiruko)
+	unlock_jukain_button.pressed.connect(debug_unlock_jukain)
+	reset_jukain_button.pressed.connect(debug_reset_jukain)
 	restart_battle()
 
 
@@ -126,8 +136,13 @@ func restart_battle() -> void:
 	enemy_units.assign(rebuilt_enemies)
 	hiruko_unit = _find_unit_by_id(HIRUKO_UNIT_ID)
 	hiruko_state = HirukoCombatStateModel.new()
+	jukain_unit = _find_unit_by_id(JUKAIN_UNIT_ID)
+	jukain_state = JukainCombatStateModel.new()
 	if hiruko_unit == null or hiruko_unit.display_name != "Hiruko":
 		status_label.text = "Hiruko fixture error — check the debugger."
+		return
+	if jukain_unit == null or jukain_unit.display_name != "Jukain":
+		status_label.text = "Jukain fixture error — check the debugger."
 		return
 	_reset_turn_state()
 	_render_battlefield()
@@ -147,6 +162,8 @@ func restart_battle() -> void:
 	break_chains_button.release_focus()
 	break_wrapper_button.release_focus()
 	reset_hiruko_button.release_focus()
+	unlock_jukain_button.release_focus()
+	reset_jukain_button.release_focus()
 
 
 func debug_break_chains() -> bool:
@@ -181,6 +198,26 @@ func debug_reset_hiruko() -> bool:
 		return false
 	hiruko_state.reset()
 	_append_combat_log("Hiruko debug state reset to SEALED.")
+	_render_battlefield()
+	return true
+
+
+func debug_unlock_jukain() -> bool:
+	if jukain_state == null:
+		return false
+	if not jukain_state.debug_unlock():
+		_append_combat_log("Jukain is already UNLOCKED.")
+		return false
+	_append_combat_log("Jukain debug state changed to UNLOCKED.")
+	_render_battlefield()
+	return true
+
+
+func debug_reset_jukain() -> bool:
+	if jukain_state == null:
+		return false
+	jukain_state.reset()
+	_append_combat_log("Jukain debug state reset to LOCKED.")
 	_render_battlefield()
 	return true
 
@@ -506,7 +543,9 @@ func _commit_basic_attack(attacker: BattleUnit, target: BattleUnit) -> bool:
 	var hiruko_hit: Dictionary = {}
 	var hiruko_attack_state := -1
 
-	if attacker == hiruko_unit:
+	if attacker == jukain_unit:
+		hp_damage = jukain_state.get_effective_atk(attacker.atk)
+	elif attacker == hiruko_unit:
 		hiruko_attack_state = hiruko_state.get_state()
 		hp_damage = hiruko_state.get_basic_attack_damage(attacker.atk)
 		attack_type = hiruko_state.get_basic_attack_type_label()
@@ -1048,6 +1087,7 @@ func _render_battlefield() -> void:
 		_position_unit_card(card, slot)
 		next_slots[container] = slot + 1
 	_refresh_hiruko_ui()
+	_refresh_jukain_ui()
 
 
 func _refresh_hiruko_ui() -> void:
@@ -1073,6 +1113,19 @@ func _refresh_hiruko_ui() -> void:
 	wrapper_seal_bar.modulate = _seal_tint(
 		hiruko_state.wrapper_current, HirukoCombatStateModel.WRAPPER_MAX
 	)
+
+
+func _refresh_jukain_ui() -> void:
+	if jukain_state == null or jukain_unit == null:
+		jukain_state_label.text = "UNAVAILABLE"
+		jukain_atk_label.text = "Effective ATK —  •  Real ATK —"
+		return
+	jukain_state_label.text = jukain_state.get_state_label()
+	jukain_atk_label.text = "Effective ATK %d  •  Real ATK %d" % [
+		jukain_state.get_effective_atk(jukain_unit.atk),
+		jukain_unit.atk,
+	]
+	jukain_atk_label.tooltip_text = jukain_atk_label.text
 
 
 func _get_hiruko_profile_text() -> String:
@@ -1141,6 +1194,12 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 		]
 	if unit == hiruko_unit and hiruko_state != null:
 		card.tooltip_text += "\n%s" % _get_hiruko_profile_text()
+	elif unit == jukain_unit and jukain_state != null:
+		card.tooltip_text += "\n%s\nEffective ATK: %d\nReal ATK: %d" % [
+		jukain_state.get_state_label(),
+		jukain_state.get_effective_atk(unit.atk),
+		unit.atk,
+		]
 
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("243b53") if unit.team == BattleUnitModel.Team.PARTY else Color("4a2837")
@@ -1197,6 +1256,11 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 		if burn_ticks > 0:
 			state_label.text += " [BURN %d]" % burn_ticks
 		state_label.add_theme_color_override("font_color", Color("f2c879"))
+	elif unit == jukain_unit and jukain_state != null:
+		state_label.text = jukain_state.get_state_label()
+		if burn_ticks > 0:
+			state_label.text += " [BURN %d]" % burn_ticks
+		state_label.add_theme_color_override("font_color", Color("f2c879"))
 	elif burn_ticks > 0:
 		state_label.text = "[BURN %d]" % burn_ticks
 		state_label.add_theme_color_override("font_color", Color("f2a65a"))
@@ -1211,12 +1275,21 @@ func _create_unit_card(unit: BattleUnit) -> PanelContainer:
 
 	var stats_label := Label.new()
 	stats_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stats_label.text = "HP %d/%d  ATK %d  SPD %d" % [
-		unit.current_hp,
-		unit.max_hp,
-		unit.atk,
-		unit.spd,
-	]
+	if unit == jukain_unit and jukain_state != null:
+		stats_label.text = "HP %d/%d  E.ATK %d  R.ATK %d  SPD %d" % [
+			unit.current_hp,
+			unit.max_hp,
+			jukain_state.get_effective_atk(unit.atk),
+			unit.atk,
+			unit.spd,
+		]
+	else:
+		stats_label.text = "HP %d/%d  ATK %d  SPD %d" % [
+			unit.current_hp,
+			unit.max_hp,
+			unit.atk,
+			unit.spd,
+		]
 	stats_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	stats_label.add_theme_font_size_override("font_size", 11)
 	stats_label.add_theme_color_override("font_color", Color("c9d6e2"))

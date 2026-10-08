@@ -56,14 +56,14 @@ func _test_roster_and_initial_state() -> void:
 	_check(scene.party_units.size() == 6, "Party roster no longer contains exactly six combatants")
 	_check(scene.enemy_units.size() == 4, "Enemy roster size changed")
 	var hiruko_count := 0
-	var generic_names: Array[String] = []
+	var other_names: Array[String] = []
 	for unit: BattleUnit in scene.party_units:
 		if unit.display_name == "Hiruko":
 			hiruko_count += 1
 		else:
-			generic_names.append(unit.display_name)
+			other_names.append(unit.display_name)
 	_check(hiruko_count == 1, "Party roster must contain exactly one Hiruko")
-	_check(generic_names == ["Party 2", "Party 3", "Party 4", "Party 5", "Party 6"], "The other five party fixtures are not unchanged generics")
+	_check(other_names == ["Jukain", "Party 3", "Party 4", "Party 5", "Party 6"], "The M5.1 roster no longer preserves Hiruko plus Jukain and four generics")
 	_check(_ids(scene.enemy_units) == [&"enemy_a", &"enemy_b", &"enemy_c", &"enemy_d"], "Enemy roster identity changed")
 	var hiruko: BattleUnit = scene.hiruko_unit
 	_check(hiruko.stable_id == &"party_1", "Hiruko did not replace Party 1's stable slot")

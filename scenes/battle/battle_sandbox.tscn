@@ -92,12 +92,12 @@ theme_override_constants/separation = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
 theme_override_font_sizes/font_size = 26
-text = "M4.4  •  Hiruko Skills & Frontline Techniques"
+text = "M5.1  •  Jukain State Foundation"
 
 [node name="Subtitle" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
-text = "Test Kick, Gut Stab, forward movement, and state-dependent sword follow-ups"
+text = "Test Jukain Locked/Unlocked effective ATK while preserving the M4 combat loop"
 
 [node name="RestartButton" type="Button" parent="Margin/Layout/Header"]
 unique_name_in_owner = true
@@ -307,7 +307,7 @@ theme_override_constants/separation = 18
 [node name="TurnStatus" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 1.4
+size_flags_stretch_ratio = 2.3
 theme_override_constants/separation = 4
 
 [node name="RoundRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
@@ -352,6 +352,7 @@ text = "CURRENT ROUND ORDER"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_font_sizes/font_size = 11
 text = "—"
 autowrap_mode = 2
 
@@ -455,6 +456,68 @@ layout_mode = 2
 focus_mode = 0
 theme_override_font_sizes/font_size = 11
 text = "Reset Hiruko — DEBUG"
+
+[node name="JukainDebug" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.9
+theme_override_constants/separation = 2
+
+[node name="StateRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Heading" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug/StateRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
+text = "JUKAIN"
+
+[node name="JukainStateLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug/StateRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.82, 0.55, 1)
+text = "LOCKED"
+
+[node name="JukainAtkLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.82, 0.88, 1)
+theme_override_font_sizes/font_size = 10
+text = "Effective ATK 1  •  Real ATK 9"
+text_overrun_behavior = 3
+
+[node name="PrescriptPendingLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.7, 0.78, 1)
+theme_override_font_sizes/font_size = 10
+text = "PRESCRIPT: PENDING M5.2"
+
+[node name="FormChainUnavailableLabel" type="Label" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.61, 0.7, 1)
+theme_override_font_sizes/font_size = 10
+text = "FORM CHAIN: NOT AVAILABLE"
+
+[node name="DebugButtons" type="VBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="UnlockJukainButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug/DebugButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 11
+text = "Unlock Jukain — DEBUG"
+
+[node name="ResetJukainButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/JukainDebug/DebugButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 11
+text = "Reset Jukain — DEBUG"
 
 [node name="ActionRow" type="HBoxContainer" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus"]
 layout_mode = 2
