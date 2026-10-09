@@ -171,16 +171,18 @@ func _test_sequential_chain_and_one_action() -> void:
 		return
 	_unlock_for_chain(scene)
 	var enemy_a := _find_unit(scene, &"enemy_a")
+	enemy_a.max_hp = 100
+	enemy_a.current_hp = 100
 	var expected_next := _find_unit(scene, &"enemy_c")
 	var turn_index_before: int = scene.turn_index
 	_check(_build_complete_chain(scene, &"enemy_a"), "Complete four-Scythe chain could not be built")
 	_check(scene.execute_jukain_form_chain(), "Complete chain did not execute")
-	_check(enemy_a.current_hp == 6 and not enemy_a.defeated, "Four 9-damage hits did not leave 42 HP target at 6")
-	for hit_index: int in 4:
-		_check(_log_count(scene, "Hit %d — Scythe: 9 Slash." % [hit_index + 1]) == 1, "Hit %d is missing or not exactly 9 Slash" % [hit_index + 1])
-	_check(not _log_contains(scene, "18 Slash") and not _log_contains(scene, "Finisher"), "M5.4 Scythe finisher behavior leaked into M5.3")
-	_check(_log_index(scene, "Hit 1 — Scythe: 9 Slash.") < _log_index(scene, "Hit 2 — Scythe: 9 Slash.") and _log_index(scene, "Hit 2 — Scythe: 9 Slash.") < _log_index(scene, "Hit 3 — Scythe: 9 Slash.") and _log_index(scene, "Hit 3 — Scythe: 9 Slash.") < _log_index(scene, "Hit 4 — Scythe: 9 Slash."), "Chain hits were not logged in sequential order")
-	_check(not _log_contains(scene, "36 Slash"), "Chain damage was collapsed into one opaque 36-damage event")
+	_check(enemy_a.current_hp == 46 and not enemy_a.defeated, "M5.4 Scythe hits did not apply 11 + 11 + 11 + 21 to the 100 HP fixture")
+	for hit_index: int in 3:
+		_check(_log_count(scene, "Hit %d — Scythe: 11 Slash." % [hit_index + 1]) == 1, "Hit %d is missing its M5.4 Front-exposure Scythe damage" % [hit_index + 1])
+	_check(_log_count(scene, "Hit 4 — Scythe [FINISHER]: 21 Slash.") == 1, "Hit 4 is missing its M5.4 Scythe finisher")
+	_check(_log_index(scene, "Hit 1 — Scythe: 11 Slash.") < _log_index(scene, "Hit 2 — Scythe: 11 Slash.") and _log_index(scene, "Hit 2 — Scythe: 11 Slash.") < _log_index(scene, "Hit 3 — Scythe: 11 Slash.") and _log_index(scene, "Hit 3 — Scythe: 11 Slash.") < _log_index(scene, "Hit 4 — Scythe [FINISHER]: 21 Slash."), "Chain hits were not logged in sequential order")
+	_check(not _log_contains(scene, "54 Slash"), "Chain damage was collapsed into one opaque 54-damage event")
 	_check(scene.current_unit == expected_next and scene.turn_index == turn_index_before + 1, "Complete chain did not advance the queue exactly once")
 	_check(not scene.action_in_progress and not scene._is_jukain_chain_selection_active(), "Completed chain retained action/builder state")
 	_check(_log_count_containing(scene, "'s turn.") >= 1 and _log_count(scene, "Enemy C's turn.") == 1, "An actor ran between chain hits or next actor did not activate once")
@@ -193,11 +195,14 @@ func _test_burn_and_early_target_defeat() -> void:
 		return
 	_unlock_for_chain(scene)
 	var jukain_hp_before: int = scene.jukain_unit.current_hp
+	var burn_target := _find_unit(scene, &"enemy_a")
+	burn_target.max_hp = 100
+	burn_target.current_hp = 100
 	_check(scene._apply_burn(scene.jukain_unit), "Could not prepare Burning Jukain")
 	_check(_build_complete_chain(scene, &"enemy_a") and scene.execute_jukain_form_chain(), "Burning Jukain chain failed")
-	_check(_log_count_containing(scene, " — Scythe: 9 Slash.") == 4, "Burning chain did not resolve four hits")
+	_check(_log_count_containing(scene, "Hit ") == 4, "Burning chain did not resolve four hits")
 	_check(scene.jukain_unit.current_hp == jukain_hp_before - 5 and scene._get_burn_ticks(scene.jukain_unit) == 1, "Jukain Burn did not tick exactly once after the whole chain")
-	_check(_log_count(scene, "Jukain takes 5 Burn damage.") == 1 and _log_index(scene, "Hit 4 — Scythe: 9 Slash.") < _log_index(scene, "Jukain takes 5 Burn damage."), "Burn timing/order is not four hits then one tick")
+	_check(_log_count(scene, "Jukain takes 5 Burn damage.") == 1 and _log_index(scene, "Hit 4 — Scythe [FINISHER]: 21 Slash.") < _log_index(scene, "Jukain takes 5 Burn damage."), "Burn timing/order is not four hits then one tick")
 	await _free_scene(scene)
 
 	scene = await _new_scene(false)
@@ -209,8 +214,8 @@ func _test_burn_and_early_target_defeat() -> void:
 	enemy_a.current_hp = 20
 	var enemy_b_hp: int = enemy_b.current_hp
 	_check(_build_complete_chain(scene, &"enemy_a") and scene.execute_jukain_form_chain(), "Early-defeat chain failed")
-	_check(enemy_a.defeated and enemy_a.current_hp == 0, "Third Scythe did not defeat the 20 HP target")
-	_check(_log_count_containing(scene, " — Scythe: 9 Slash.") == 3 and not _log_contains(scene, "Hit 4 —"), "Chain did not stop after intermediate target defeat")
+	_check(enemy_a.defeated and enemy_a.current_hp == 0, "Second M5.4 Scythe did not defeat the 20 HP target")
+	_check(_log_count_containing(scene, "Hit ") == 2 and not _log_contains(scene, "Hit 3 —"), "Chain did not stop after intermediate target defeat")
 	_check(enemy_b.current_hp == enemy_b_hp, "Early target defeat retargeted another enemy")
 	_check(scene.battle_result == scene.BattleResult.NONE and scene.current_unit == _find_unit(scene, &"enemy_c"), "Nonterminal early defeat did not complete one normal action")
 	await _free_scene(scene)
@@ -230,7 +235,7 @@ func _test_victory_and_terminal_guards() -> void:
 	scene._apply_burn(scene.jukain_unit)
 	_check(_build_complete_chain(scene, &"enemy_a") and scene.execute_jukain_form_chain(), "Victory-mid-chain execution failed")
 	_check(scene.battle_result == scene.BattleResult.VICTORY and scene.current_unit == null, "Final enemy death did not produce immediate Victory")
-	_check(_log_count_containing(scene, " — Scythe: 9 Slash.") == 3 and not _log_contains(scene, "Hit 4 —"), "Victory did not stop remaining chain hits")
+	_check(_log_count_containing(scene, "Hit ") == 2 and not _log_contains(scene, "Hit 3 —"), "Victory did not stop remaining chain hits")
 	_check(scene.jukain_unit.current_hp == jukain_hp_before and scene._get_burn_ticks(scene.jukain_unit) == 2, "Victory chain processed post-Victory Burn")
 	_check(not scene.get_node("%FormChainButton").visible and not scene.begin_jukain_form_chain() and not scene.execute_jukain_form_chain(), "Victory allowed Form Chain controls or stale execution")
 	await _free_scene(scene)

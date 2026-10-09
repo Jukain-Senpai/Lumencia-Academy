@@ -1,6 +1,6 @@
 extends Control
 
-## Milestone 5.3 battle sandbox. Owns fixture, turn flow, character state, and one Prescript.
+## Milestone 5.4 battle sandbox. Owns fixture, turn flow, character state, and one Prescript.
 
 const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
 const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_state.gd")
@@ -27,7 +27,20 @@ enum HirukoSkill {
 
 enum JukainReplicaForm {
 	SCYTHE,
+	SWORD,
+	WHIP,
 }
+
+const UNASSIGNED_REPLICA_FORM := -1
+const REPLICA_SLOT_MAPPING: Array[Dictionary] = [
+	{"action": &"jukain_replica_slot_1", "form": JukainReplicaForm.SCYTHE},
+	{"action": &"jukain_replica_slot_2", "form": JukainReplicaForm.SWORD},
+	{"action": &"jukain_replica_slot_3", "form": JukainReplicaForm.WHIP},
+	{"action": &"jukain_replica_slot_4", "form": UNASSIGNED_REPLICA_FORM},
+	{"action": &"jukain_replica_slot_5", "form": UNASSIGNED_REPLICA_FORM},
+	{"action": &"jukain_replica_slot_6", "form": UNASSIGNED_REPLICA_FORM},
+]
+const REPLICA_DAMAGE_DENOMINATOR := 1_000_000
 
 # Temporary sandbox fixtures. Hiruko and Jukain retain their M3 slot values; none are canon balance.
 const PARTY_FIXTURES: Array[Dictionary] = [
@@ -54,6 +67,8 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var cancel_button: Button = %CancelButton
 @onready var confirm_ally_attack_button: Button = %ConfirmAllyAttackButton
 @onready var scythe_form_button: Button = %ScytheFormButton
+@onready var sword_form_button: Button = %SwordFormButton
+@onready var whip_form_button: Button = %WhipFormButton
 @onready var undo_chain_button: Button = %UndoChainButton
 @onready var execute_chain_button: Button = %ExecuteChainButton
 @onready var kick_skill_button: Button = %KickSkillButton
@@ -64,6 +79,8 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var move_back_button: Button = %MoveBackButton
 @onready var action_mode_label: Label = %ActionModeLabel
 @onready var chain_slots_label: Label = %ChainSlotsLabel
+@onready var replica_reserved_label: Label = %ReplicaReservedLabel
+@onready var replica_form_row: HBoxContainer = %ReplicaFormRow
 @onready var status_label: Label = %StatusLabel
 @onready var round_label: Label = %RoundLabel
 @onready var current_turn_label: Label = %CurrentTurnLabel
@@ -119,7 +136,12 @@ func _ready() -> void:
 	move_button.pressed.connect(begin_move_selection)
 	cancel_button.pressed.connect(cancel_action_selection)
 	confirm_ally_attack_button.pressed.connect(confirm_ally_attack)
-	scythe_form_button.pressed.connect(select_jukain_chain_form.bind(JukainReplicaForm.SCYTHE))
+	var form_buttons := _replica_form_buttons()
+	for slot_index: int in form_buttons.size():
+		var form: int = REPLICA_SLOT_MAPPING[slot_index]["form"]
+		form_buttons[slot_index].pressed.connect(
+			select_jukain_chain_form.bind(form as JukainReplicaForm)
+		)
 	undo_chain_button.pressed.connect(undo_jukain_chain_form)
 	execute_chain_button.pressed.connect(execute_jukain_form_chain)
 	kick_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.KICK))
@@ -134,6 +156,28 @@ func _ready() -> void:
 	unlock_jukain_button.pressed.connect(debug_unlock_jukain)
 	reset_jukain_button.pressed.connect(debug_reset_jukain)
 	restart_battle()
+	_refresh_replica_shortcut_prompts()
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if _handle_jukain_replica_shortcut(event):
+		get_viewport().set_input_as_handled()
+
+
+func _handle_jukain_replica_shortcut(event: InputEvent) -> bool:
+	if not event is InputEventKey or not event.pressed or event.echo:
+		return false
+	if not _can_accept_jukain_replica_shortcut():
+		return false
+	for slot: Dictionary in REPLICA_SLOT_MAPPING:
+		var action: StringName = slot["action"]
+		if not event.is_action_pressed(action):
+			continue
+		var form: int = slot["form"]
+		if form == UNASSIGNED_REPLICA_FORM:
+			return true
+		return select_jukain_chain_form(form as JukainReplicaForm)
+	return false
 
 
 func restart_battle() -> void:
@@ -176,6 +220,8 @@ func restart_battle() -> void:
 	cancel_button.release_focus()
 	confirm_ally_attack_button.release_focus()
 	scythe_form_button.release_focus()
+	sword_form_button.release_focus()
+	whip_form_button.release_focus()
 	undo_chain_button.release_focus()
 	execute_chain_button.release_focus()
 	kick_skill_button.release_focus()
@@ -416,9 +462,19 @@ func select_jukain_chain_form(form: JukainReplicaForm) -> bool:
 		or not _is_living(jukain_unit)
 		or battle_result != BattleResult.NONE
 		or jukain_state.get_state() != JukainCombatStateModel.State.UNLOCKED
-		or form != JukainReplicaForm.SCYTHE
+		or form not in JukainReplicaForm.values()
 		or jukain_chain_slots.size() >= 4
 	):
+		return false
+	var projection := _project_jukain_chain_lines()
+	if not projection["valid"]:
+		status_label.text = "The current chain has an invalid projected position."
+		return false
+	if (
+		form == JukainReplicaForm.WHIP
+		and not _can_whip_reach(projection["jukain_line"], projection["target_line"])
+	):
+		status_label.text = "Whip cannot reach this target from the projected position."
 		return false
 	jukain_chain_slots.append(form)
 	_refresh_action_ui()
@@ -445,11 +501,15 @@ func execute_jukain_form_chain() -> bool:
 	):
 		return false
 	for form: JukainReplicaForm in jukain_chain_slots:
-		if form != JukainReplicaForm.SCYTHE:
+		if form not in JukainReplicaForm.values():
 			return false
 
 	var target := _find_unit_by_id(jukain_chain_target_id)
 	if target == null or target.team != BattleUnitModel.Team.ENEMY or not _is_living(target):
+		return false
+	var projection := _project_jukain_chain_lines()
+	if not projection["valid"]:
+		status_label.text = "Form Chain cannot execute from the current live positions."
 		return false
 
 	action_in_progress = true
@@ -458,13 +518,41 @@ func execute_jukain_form_chain() -> bool:
 	for hit_index: int in jukain_chain_slots.size():
 		if battle_result != BattleResult.NONE or not _is_living(target):
 			break
-		var damage: int = jukain_state.get_effective_atk(jukain_unit.atk)
+		var form: JukainReplicaForm = jukain_chain_slots[hit_index]
+		if form == JukainReplicaForm.SWORD:
+			var jukain_line_before: BattleUnit.Line = jukain_unit.line
+			jukain_unit.line = _advance_line_toward_front(jukain_unit.line)
+			if jukain_line_before == jukain_unit.line:
+				_append_combat_log("Jukain remains Front.")
+			else:
+				_append_combat_log("Jukain: %s → %s." % [
+					BattleUnitModel.line_name(jukain_line_before),
+					BattleUnitModel.line_name(jukain_unit.line),
+				])
+		if (
+			form == JukainReplicaForm.WHIP
+			and not _can_whip_reach(jukain_unit.line, target.line)
+		):
+			_append_combat_log("Replica Form Chain stops: Whip cannot reach the retained target.")
+			break
+		var damage := _calculate_jukain_replica_damage(
+			form, hit_index, jukain_unit.line, target.line
+		)
 		var hp_before: int = target.current_hp
 		target.current_hp = maxi(0, target.current_hp - damage)
 		if target.current_hp == 0:
 			target.defeated = true
 		completed_hits += 1
-		_append_combat_log("Hit %d — Scythe: %d Slash." % [hit_index + 1, damage])
+		var finisher_suffix := (
+			" [FINISHER]" if form == JukainReplicaForm.SCYTHE and hit_index == 3 else ""
+		)
+		_append_combat_log("Hit %d — %s%s: %d %s." % [
+			hit_index + 1,
+			_jukain_replica_form_label(form),
+			finisher_suffix,
+			damage,
+			_jukain_replica_damage_type(form),
+		])
 		_append_combat_log("%s: %d → %d HP." % [target.display_name, hp_before, target.current_hp])
 		if target.defeated:
 			_clear_burn(target)
@@ -474,6 +562,18 @@ func execute_jukain_form_chain() -> bool:
 				return true
 			_append_combat_log("Replica Form Chain stops: target defeated.")
 			break
+		if form == JukainReplicaForm.WHIP:
+			var target_line_before: BattleUnit.Line = target.line
+			target.line = _pull_line_toward_front(target.line)
+			if target_line_before == target.line:
+				_append_combat_log("%s remains Front." % target.display_name)
+			else:
+				_append_combat_log("%s: %s → %s." % [
+					target.display_name,
+					BattleUnitModel.line_name(target_line_before),
+					BattleUnitModel.line_name(target.line),
+				])
+		_render_battlefield()
 
 	if completed_hits == 4:
 		_append_combat_log("Replica Form Chain complete.")
@@ -707,6 +807,123 @@ func _can_begin_jukain_form_chain() -> bool:
 		and ally_attack_confirmation_target_id == &""
 		and not _is_jukain_chain_selection_active()
 	)
+
+
+func _can_accept_jukain_replica_shortcut() -> bool:
+	return (
+		not action_in_progress
+		and battle_result == BattleResult.NONE
+		and current_unit == jukain_unit
+		and _is_living(jukain_unit)
+		and jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED
+		and not selecting_jukain_chain_target
+		and jukain_chain_target_id != &""
+		and jukain_chain_slots.size() < 4
+		and not selecting_target
+		and not selecting_move
+		and not selecting_skill
+		and selected_hiruko_skill == HirukoSkill.NONE
+		and ally_attack_confirmation_target_id == &""
+	)
+
+
+func _project_jukain_chain_lines() -> Dictionary:
+	var target := _find_unit_by_id(jukain_chain_target_id)
+	if (
+		jukain_unit == null
+		or target == null
+		or target.team != BattleUnitModel.Team.ENEMY
+		or not _is_living(jukain_unit)
+		or not _is_living(target)
+	):
+		return {"valid": false}
+	var projected_jukain_line: BattleUnit.Line = jukain_unit.line
+	var projected_target_line: BattleUnit.Line = target.line
+	for form: JukainReplicaForm in jukain_chain_slots:
+		if form == JukainReplicaForm.SWORD:
+			projected_jukain_line = _advance_line_toward_front(projected_jukain_line)
+		elif form == JukainReplicaForm.WHIP:
+			if not _can_whip_reach(projected_jukain_line, projected_target_line):
+				return {"valid": false}
+			projected_target_line = _pull_line_toward_front(projected_target_line)
+	return {
+		"valid": true,
+		"jukain_line": projected_jukain_line,
+		"target_line": projected_target_line,
+	}
+
+
+func _advance_line_toward_front(line: BattleUnit.Line) -> BattleUnit.Line:
+	match line:
+		BattleUnitModel.Line.BACK:
+			return BattleUnitModel.Line.MID
+		BattleUnitModel.Line.MID:
+			return BattleUnitModel.Line.FRONT
+	return BattleUnitModel.Line.FRONT
+
+
+func _pull_line_toward_front(line: BattleUnit.Line) -> BattleUnit.Line:
+	match line:
+		BattleUnitModel.Line.BACK:
+			return BattleUnitModel.Line.MID
+		BattleUnitModel.Line.MID:
+			return BattleUnitModel.Line.FRONT
+	return BattleUnitModel.Line.FRONT
+
+
+func _can_whip_reach(jukain_line: BattleUnit.Line, target_line: BattleUnit.Line) -> bool:
+	if jukain_line == BattleUnitModel.Line.BACK:
+		return target_line == BattleUnitModel.Line.FRONT
+	return target_line in [BattleUnitModel.Line.FRONT, BattleUnitModel.Line.MID]
+
+
+func _jukain_replica_efficiency_percent(
+	form: JukainReplicaForm, jukain_line: BattleUnit.Line
+) -> int:
+	match form:
+		JukainReplicaForm.SCYTHE:
+			return 100
+		JukainReplicaForm.SWORD:
+			match jukain_line:
+				BattleUnitModel.Line.FRONT:
+					return 100
+				BattleUnitModel.Line.MID:
+					return 60
+				BattleUnitModel.Line.BACK:
+					return 35
+		JukainReplicaForm.WHIP:
+			return 60 if jukain_line == BattleUnitModel.Line.BACK else 100
+	return 0
+
+
+func _target_line_exposure_percent(target_line: BattleUnit.Line) -> int:
+	match target_line:
+		BattleUnitModel.Line.FRONT:
+			return 115
+		BattleUnitModel.Line.MID:
+			return 100
+		BattleUnitModel.Line.BACK:
+			return 85
+	return 0
+
+
+func _jukain_replica_modifier_percent(form: JukainReplicaForm, hit_index: int) -> int:
+	return 200 if form == JukainReplicaForm.SCYTHE and hit_index == 3 else 100
+
+
+func _calculate_jukain_replica_damage(
+	form: JukainReplicaForm,
+	hit_index: int,
+	jukain_line: BattleUnit.Line,
+	target_line: BattleUnit.Line
+) -> int:
+	var numerator: int = (
+		jukain_state.get_effective_atk(jukain_unit.atk)
+		* _jukain_replica_efficiency_percent(form, jukain_line)
+		* _target_line_exposure_percent(target_line)
+		* _jukain_replica_modifier_percent(form, hit_index)
+	)
+	return (numerator + REPLICA_DAMAGE_DENOMINATOR - 1) / REPLICA_DAMAGE_DENOMINATOR
 
 
 func _get_valid_jukain_chain_targets() -> Array[BattleUnit]:
@@ -1320,7 +1537,11 @@ func _refresh_action_ui() -> void:
 	cancel_button.hide()
 	confirm_ally_attack_button.hide()
 	chain_slots_label.hide()
+	replica_reserved_label.hide()
+	replica_form_row.hide()
 	scythe_form_button.hide()
+	sword_form_button.hide()
+	whip_form_button.hide()
 	undo_chain_button.hide()
 	execute_chain_button.hide()
 	execute_chain_button.disabled = true
@@ -1347,14 +1568,20 @@ func _refresh_action_ui() -> void:
 		action_mode_label.text = "Build Replica Form Chain"
 		chain_slots_label.text = _get_jukain_chain_slots_text()
 		chain_slots_label.show()
+		replica_reserved_label.show()
+		replica_form_row.show()
 		scythe_form_button.show()
+		sword_form_button.show()
+		whip_form_button.show()
 		scythe_form_button.disabled = jukain_chain_slots.size() >= 4
+		sword_form_button.disabled = jukain_chain_slots.size() >= 4
+		whip_form_button.disabled = jukain_chain_slots.size() >= 4
 		undo_chain_button.show()
 		undo_chain_button.disabled = jukain_chain_slots.is_empty()
 		execute_chain_button.show()
 		execute_chain_button.disabled = jukain_chain_slots.size() != 4
 		cancel_button.show()
-		status_label.text = "Select Scythe once per slot, then execute the four-hit chain."
+		status_label.text = "Click a Replica form or use its shortcut; fill four slots, then Execute."
 	elif ally_attack_confirmation_target_id != &"":
 		action_mode_label.text = "Confirm Ally Attack"
 		confirm_ally_attack_button.show()
@@ -1421,7 +1648,59 @@ func _jukain_replica_form_label(form: JukainReplicaForm) -> String:
 	match form:
 		JukainReplicaForm.SCYTHE:
 			return "Scythe"
+		JukainReplicaForm.SWORD:
+			return "Sword"
+		JukainReplicaForm.WHIP:
+			return "Whip"
 	return "Unknown"
+
+
+func _jukain_replica_damage_type(form: JukainReplicaForm) -> String:
+	return "Blunt" if form == JukainReplicaForm.WHIP else "Slash"
+
+
+func _refresh_replica_shortcut_prompts() -> void:
+	var form_buttons := _replica_form_buttons()
+	for slot_index: int in form_buttons.size():
+		var slot: Dictionary = REPLICA_SLOT_MAPPING[slot_index]
+		form_buttons[slot_index].text = "[%s] %s" % [
+			_replica_action_prompt(slot["action"]),
+			_jukain_replica_form_label(slot["form"] as JukainReplicaForm),
+		]
+	var reserved: PackedStringArray = []
+	for slot_index: int in range(3, REPLICA_SLOT_MAPPING.size()):
+		var action: StringName = REPLICA_SLOT_MAPPING[slot_index]["action"]
+		reserved.append("[%s] —" % _replica_action_prompt(action))
+	replica_reserved_label.text = "%s  (reserved / unassigned)" % "  •  ".join(reserved)
+
+
+func _replica_form_buttons() -> Array[Button]:
+	return [scythe_form_button, sword_form_button, whip_form_button]
+
+
+func _replica_action_prompt(action: StringName) -> String:
+	for event: InputEvent in InputMap.action_get_events(action):
+		if event is InputEventKey:
+			var key_event := event as InputEventKey
+			var prompt := key_event.as_text_keycode()
+			if prompt.is_empty():
+				prompt = key_event.as_text()
+			if not prompt.is_empty():
+				return prompt
+	return "Unbound"
+
+
+func _jukain_replica_reference_text() -> String:
+	var entries: PackedStringArray = []
+	for slot: Dictionary in REPLICA_SLOT_MAPPING:
+		var form: int = slot["form"]
+		if form == UNASSIGNED_REPLICA_FORM:
+			continue
+		entries.append("%s %s" % [
+			_replica_action_prompt(slot["action"]),
+			_jukain_replica_form_label(form as JukainReplicaForm),
+		])
+	return "  •  ".join(entries)
 
 
 func _hiruko_skill_label(skill: HirukoSkill) -> String:
@@ -1596,6 +1875,7 @@ func _get_jukain_inspector_text() -> String:
 			else "UNAVAILABLE"
 		)
 	)
+	lines.append("REPLICA: %s" % _jukain_replica_reference_text())
 	return "\n".join(lines)
 
 
