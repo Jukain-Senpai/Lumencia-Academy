@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/vn/vn_prototype.tscn" id="1_vn"]
+
+[node name="M6TrainingHallEntry" instance=ExtResource("1_vn")]
+initial_dialogue_path = "res://data/dialogue/m6_training_hall_prebattle.json"

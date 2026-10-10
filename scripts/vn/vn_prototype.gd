@@ -4,7 +4,9 @@ const INITIAL_DIALOGUE_PATH := "res://data/dialogue/vn_prototype_m1.json"
 const KNOWN_DIALOGUE_PATHS := [
 	INITIAL_DIALOGUE_PATH,
 	"res://data/dialogue/vn_hallway_m2_3.json",
+	"res://data/dialogue/m6_training_hall_prebattle.json",
 ]
+const BATTLE_SCENE_PATH := "res://scenes/battle/battle_sandbox.tscn"
 
 const CHARACTER_TEXTURES := {
 	"Jukain": {
@@ -17,6 +19,8 @@ const CHARACTER_TEXTURES := {
 		"faint_smile": preload("res://assets/art/characters/Hiruko/Hiruko_faint_smile.png"),
 	},
 }
+
+@export_file("*.json") var initial_dialogue_path := INITIAL_DIALOGUE_PATH
 
 @onready var story_background: TextureRect = %StoryBackground
 @onready var character_layer: Control = %CharacterLayer
@@ -45,6 +49,7 @@ var awaiting_choice := false
 var scene_ended := false
 var dialogue_ready := false
 var last_dialogue_error := ""
+var battle_launch_committed := false
 
 
 func _ready() -> void:
@@ -55,7 +60,7 @@ func _ready() -> void:
 	load_button.pressed.connect(_load_game)
 	new_run_button.pressed.connect(_start_new_run)
 
-	dialogue_ready = _load_dialogue_data(INITIAL_DIALOGUE_PATH)
+	dialogue_ready = _load_dialogue_data(initial_dialogue_path)
 	if dialogue_ready:
 		_reset_prototype()
 	else:
@@ -65,7 +70,7 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not dialogue_ready or scene_ended or awaiting_choice:
+	if battle_launch_committed or not dialogue_ready or scene_ended or awaiting_choice:
 		return
 
 	var requested_advance := false
@@ -165,6 +170,9 @@ func _validate_dialogue_data(data: Dictionary, dialogue_path: String) -> Diction
 					return {}
 			"transition":
 				if not _validate_transition_node(node, node_id):
+					return {}
+			"start_battle":
+				if not _validate_start_battle_node(node, node_id):
 					return {}
 			"end":
 				pass
@@ -347,6 +355,30 @@ func _validate_transition_node(node: Dictionary, node_id: String) -> bool:
 	return true
 
 
+func _validate_start_battle_node(node: Dictionary, node_id: String) -> bool:
+	if not _has_only_fields(
+		node,
+		["id", "type", "battle_scene", "encounter_id", "return_sequence"],
+		"start_battle node '%s'" % node_id
+	):
+		return false
+	var battle_scene := _required_string(node, "battle_scene", node_id)
+	var encounter_id := _required_string(node, "encounter_id", node_id)
+	var return_sequence := _required_string(node, "return_sequence", node_id)
+	if battle_scene.is_empty() or encounter_id.is_empty() or return_sequence.is_empty():
+		return false
+	if battle_scene != BATTLE_SCENE_PATH or not ResourceLoader.exists(battle_scene):
+		return _report_dialogue_error(
+			"Start-battle node '%s' has invalid battle scene '%s'." % [node_id, battle_scene]
+		)
+	var battle_resource: Resource = load(battle_scene)
+	if not battle_resource is PackedScene:
+		return _report_dialogue_error(
+			"Start-battle node '%s' target is not a PackedScene." % node_id
+		)
+	return true
+
+
 func _has_only_fields(data: Dictionary, allowed_fields: Array, context: String) -> bool:
 	for field: Variant in data:
 		if not allowed_fields.has(field):
@@ -391,6 +423,7 @@ func _reset_prototype() -> void:
 	current_node_id = ""
 	awaiting_choice = false
 	scene_ended = false
+	battle_launch_committed = false
 
 	story_background.show()
 	character_layer.show()
@@ -429,6 +462,8 @@ func _show_node(node_id: String) -> void:
 			_show_condition(node)
 		"transition":
 			_transition_to_sequence(node)
+		"start_battle":
+			_start_battle(node)
 		"end":
 			_finish_scene()
 
@@ -627,6 +662,27 @@ func _transition_to_sequence(node: Dictionary) -> void:
 	character_layer.show()
 	dialogue_panel.show()
 	_show_node(start_node_id)
+
+
+func _start_battle(node: Dictionary) -> bool:
+	if battle_launch_committed:
+		return false
+	battle_launch_committed = true
+	dialogue_ready = false
+	if not GameState.prepare_battle_context(node["encounter_id"], node["return_sequence"]):
+		battle_launch_committed = false
+		_report_runtime_error("Battle launch context is invalid or already prepared.")
+		return false
+	var change_error := get_tree().change_scene_to_file(node["battle_scene"])
+	if change_error != OK:
+		GameState.clear_pending_battle_context()
+		battle_launch_committed = false
+		_report_runtime_error(
+			"Could not launch battle scene '%s': %s"
+			% [node["battle_scene"], error_string(change_error)]
+		)
+		return false
+	return true
 
 
 func _report_runtime_error(message: String) -> void:

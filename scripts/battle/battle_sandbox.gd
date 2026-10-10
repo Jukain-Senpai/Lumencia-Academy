@@ -118,6 +118,7 @@ var hiruko_state: RefCounted = null
 var jukain_unit: BattleUnit = null
 var jukain_state: RefCounted = null
 var jukain_prescript: RefCounted = null
+var battle_context: Dictionary = {}
 var selected_inspector_unit_id: StringName = HIRUKO_UNIT_ID
 var ally_attack_confirmation_target_id: StringName = &""
 var selecting_jukain_chain_target := false
@@ -129,6 +130,7 @@ var laevatain_aura_turn_token := ""
 
 
 func _ready() -> void:
+	battle_context = GameState.get_pending_battle_context()
 	restart_button.pressed.connect(restart_battle)
 	attack_button.pressed.connect(begin_attack_selection)
 	form_chain_button.pressed.connect(begin_jukain_form_chain)

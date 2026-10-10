@@ -1,0 +1,61 @@
+{
+  "background": "res://assets/art/backgrounds/academy_training_hall.png",
+  "start": "training_01",
+  "nodes": [
+    {
+      "id": "training_01",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "We're supposed to clear the targets before the exercise ends.",
+      "next": "training_02"
+    },
+    {
+      "id": "training_02",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "Straightforward. That's suspicious.",
+      "next": "training_03"
+    },
+    {
+      "id": "training_03",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "It's training, Jukain.",
+      "next": "training_04"
+    },
+    {
+      "id": "training_04",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "That's usually when something decides to become complicated.",
+      "next": "training_05"
+    },
+    {
+      "id": "training_05",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "Just stay focused.",
+      "next": "training_06"
+    },
+    {
+      "id": "training_06",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "I'll treasure those words when this inevitably goes wrong.",
+      "next": "launch_training_battle"
+    },
+    {
+      "id": "launch_training_battle",
+      "type": "start_battle",
+      "battle_scene": "res://scenes/battle/battle_sandbox.tscn",
+      "encounter_id": "m6_training_hall_prototype",
+      "return_sequence": "m6_training_hall_postbattle"
+    }
+  ]
+}
