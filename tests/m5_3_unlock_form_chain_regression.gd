@@ -263,7 +263,7 @@ func _test_basic_attack_no_relock_and_inspector() -> void:
 	var enemy_a := _find_unit(scene, &"enemy_a")
 	var hp_before: int = enemy_a.current_hp
 	_check(scene.begin_attack_selection() and scene.select_attack_target(&"enemy_a"), "Unlocked Basic Attack no longer resolves")
-	_check(hp_before - enemy_a.current_hp == 9, "Unlocked Basic Attack did not use effective ATK 9")
+	_check(hp_before - enemy_a.current_hp == 10, "Post-Obey Basic Attack did not apply M6.1 Blessing after effective ATK 9")
 	_check(scene.jukain_unit.atk == 9, "Unlocked Basic Attack mutated real ATK")
 	_set_current(scene, scene.jukain_unit)
 	for step: int in 3:

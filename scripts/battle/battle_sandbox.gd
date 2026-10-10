@@ -1,6 +1,6 @@
 extends Control
 
-## Milestone 5.4 battle sandbox. Owns fixture, turn flow, character state, and one Prescript.
+## Milestone 6.1 battle sandbox. Owns fixture, turn flow, character state, and one Prescript.
 
 const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
 const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_state.gd")
@@ -923,7 +923,10 @@ func _calculate_jukain_replica_damage(
 		* _target_line_exposure_percent(target_line)
 		* _jukain_replica_modifier_percent(form, hit_index)
 	)
-	return (numerator + REPLICA_DAMAGE_DENOMINATOR - 1) / REPLICA_DAMAGE_DENOMINATOR
+	var resolved_damage := (
+		(numerator + REPLICA_DAMAGE_DENOMINATOR - 1) / REPLICA_DAMAGE_DENOMINATOR
+	)
+	return jukain_state.apply_blessing_to_resolved_damage(resolved_damage)
 
 
 func _get_valid_jukain_chain_targets() -> Array[BattleUnit]:
@@ -1044,6 +1047,10 @@ func _commit_basic_attack(
 					jukain_prescript.get_karma_multiplier_label(), raw_damage, hp_damage
 				]
 			)
+	if attacker == jukain_unit:
+		# Blessing is the final Jukain outgoing stage, after the existing attack and
+		# target-specific damage calculation have produced an integer result.
+		hp_damage = jukain_state.apply_blessing_to_resolved_damage(hp_damage)
 
 	# HP is intentionally applied before raw Seal damage. The prepared result
 	# captured Hiruko's state at hit start for this hit's resistance calculation.
@@ -1102,7 +1109,7 @@ func _commit_basic_attack(
 		):
 			var route: String = jukain_prescript.get_route_label()
 			_append_combat_log("Prescript resolved: %s." % route)
-			_unlock_jukain_from_prescript(route)
+			_resolve_jukain_prescript_transition(route)
 	elif (
 		target == jukain_unit
 		and attacker.team == BattleUnitModel.Team.ENEMY
@@ -1112,7 +1119,7 @@ func _commit_basic_attack(
 	):
 		_append_combat_log("Replacement complete.")
 		_append_combat_log("Prescript resolved: DEFY.")
-		_unlock_jukain_from_prescript("DEFY")
+		_resolve_jukain_prescript_transition("DEFY")
 
 	_clear_action_selection()
 	_render_battlefield()
@@ -1120,7 +1127,7 @@ func _commit_basic_attack(
 	return true
 
 
-func _unlock_jukain_from_prescript(route: String) -> bool:
+func _resolve_jukain_prescript_transition(route: String) -> bool:
 	if (
 		jukain_state == null
 		or jukain_prescript == null
@@ -1128,13 +1135,16 @@ func _unlock_jukain_from_prescript(route: String) -> bool:
 		or route not in ["OBEY", "EXPLOIT", "DEFY"]
 	):
 		return false
-	if not jukain_state.unlock():
-		return false
-	_append_combat_log("Jukain unlocks after %s." % route)
-	_append_combat_log(
-		"Effective ATK restored to %d." % jukain_state.get_effective_atk(jukain_unit.atk)
-	)
-	_append_combat_log("Replica Form Chain is now available.")
+	if route == "OBEY":
+		jukain_state.grant_blessing()
+		_append_combat_log("Blessing of the Index +1.")
+		_append_combat_log("Jukain damage +10%.")
+	if jukain_state.unlock():
+		_append_combat_log("Jukain unlocks after %s." % route)
+		_append_combat_log(
+			"Effective ATK restored to %d." % jukain_state.get_effective_atk(jukain_unit.atk)
+		)
+		_append_combat_log("Replica Form Chain is now available.")
 	return true
 
 
@@ -1444,6 +1454,8 @@ func _end_battle(result: BattleResult) -> void:
 	enemy_action_pending = false
 	current_unit = null
 	_clear_action_selection()
+	# Blessing is active combat state only; M6.1 creates no story/result transfer.
+	jukain_state.clear_blessing()
 	if result == BattleResult.VICTORY:
 		_append_combat_log("All enemies defeated.")
 		_append_combat_log("Victory!")
@@ -1852,6 +1864,10 @@ func _get_jukain_inspector_text() -> String:
 			jukain_state.get_state_label(),
 			jukain_state.get_effective_atk(jukain_unit.atk),
 			jukain_unit.atk,
+		],
+		"Blessing: %d (+%d%% Damage)" % [
+			jukain_state.blessing_stacks,
+			jukain_state.get_blessing_damage_percent(),
 		],
 	]
 	match jukain_prescript.phase:
