@@ -1,13 +1,204 @@
 {
   "background": "res://assets/art/backgrounds/academy_training_hall.png",
-  "start": "postbattle_01",
+  "start": "check_direct_hit",
   "nodes": [
     {
-      "id": "postbattle_01",
+      "id": "check_direct_hit",
+      "type": "condition",
+      "condition": {
+        "type": "battle_result_matches",
+        "outcome": "VICTORY",
+        "encounter_id": "m6_training_hall_prototype",
+        "prescript_id": "prototype_hiruko_hp",
+        "prescript_route": "OBEY",
+        "required_fact": "jukain_attacked_hiruko"
+      },
+      "effects": [
+        {
+          "type": "adjust_bond",
+          "bond": "hiruko",
+          "amount": -1
+        }
+      ],
+      "true_target": "obey_01",
+      "false_target": "check_enemy_hit"
+    },
+    {
+      "id": "check_enemy_hit",
+      "type": "condition",
+      "condition": {
+        "type": "battle_result_matches",
+        "outcome": "VICTORY",
+        "encounter_id": "m6_training_hall_prototype",
+        "prescript_id": "prototype_hiruko_hp",
+        "prescript_route": "EXPLOIT",
+        "required_fact": "hiruko_damaged_by_enemy"
+      },
+      "effects": [
+        {
+          "type": "adjust_bond",
+          "bond": "hiruko",
+          "amount": -1
+        }
+      ],
+      "true_target": "exploit_01",
+      "false_target": "check_replacement"
+    },
+    {
+      "id": "check_replacement",
+      "type": "condition",
+      "condition": {
+        "type": "battle_result_matches",
+        "outcome": "VICTORY",
+        "encounter_id": "m6_training_hall_prototype",
+        "prescript_id": "prototype_hiruko_hp",
+        "prescript_route": "DEFY",
+        "required_fact": "replacement_requirement_completed"
+      },
+      "effects": [
+        {
+          "type": "adjust_bond",
+          "bond": "hiruko",
+          "amount": 1
+        }
+      ],
+      "true_target": "defy_01",
+      "false_target": "reaction_fallback"
+    },
+    {
+      "id": "obey_01",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "You really hit me because that thing told you to.",
+      "next": "obey_02"
+    },
+    {
+      "id": "obey_02",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "In my defense, it was extremely specific.",
+      "next": "obey_03"
+    },
+    {
+      "id": "obey_03",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "That's your defense?",
+      "next": "obey_04"
+    },
+    {
+      "id": "obey_04",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "It's not a particularly strong one.",
+      "next": "shared_01"
+    },
+    {
+      "id": "exploit_01",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "You moved out of the way on purpose.",
+      "next": "exploit_02"
+    },
+    {
+      "id": "exploit_02",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "Technically, I never touched you.",
+      "next": "exploit_03"
+    },
+    {
+      "id": "exploit_03",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "You used me as a loophole.",
+      "next": "exploit_04"
+    },
+    {
+      "id": "exploit_04",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "It sounded better in my head.",
+      "next": "shared_01"
+    },
+    {
+      "id": "defy_01",
       "type": "line",
       "speaker": "Hiruko",
       "expression": "neutral",
-      "text": "[Prototype] Returned from battle.",
+      "text": "You could've used me to clear the first Prescript.",
+      "next": "defy_02"
+    },
+    {
+      "id": "defy_02",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "I noticed.",
+      "next": "defy_03"
+    },
+    {
+      "id": "defy_03",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "So you let it punish you instead.",
+      "next": "defy_04"
+    },
+    {
+      "id": "defy_04",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "I disliked its first suggestion.",
+      "next": "defy_05"
+    },
+    {
+      "id": "defy_05",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "faint_smile",
+      "text": "...Idiot.",
+      "next": "shared_01"
+    },
+    {
+      "id": "shared_01",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "Can we agree that was more complicated than advertised?",
+      "next": "shared_02"
+    },
+    {
+      "id": "shared_02",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "We're done. That's enough for me.",
+      "next": "shared_03"
+    },
+    {
+      "id": "shared_03",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "Finally, something we agree on.",
+      "next": "postbattle_end"
+    },
+    {
+      "id": "reaction_fallback",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "[Prototype] No valid post-battle reaction was available.",
       "next": "postbattle_end"
     },
     {

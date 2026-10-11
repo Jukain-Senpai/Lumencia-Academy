@@ -198,7 +198,7 @@ func _test_real_vn_to_battle_path_and_double_guard() -> void:
 	await process_frame
 	await process_frame
 	_check(current_scene != null and current_scene.name == "VNPrototype" and current_scene.current_dialogue_path == "res://data/dialogue/m6_training_hall_postbattle.json", "M6.4: integrated Victory did not return through the reusable VN")
-	_check(game_state.get_bond("hiruko") == 0, "SCOPE: integrated Victory changed Hiruko Bond")
+	_check(game_state.get_bond("hiruko") == -1, "M6.5: integrated Obey reaction did not apply its contextual Bond consequence")
 	if current_scene != null:
 		await _free_scene(current_scene)
 

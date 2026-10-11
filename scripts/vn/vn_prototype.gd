@@ -11,6 +11,11 @@ const KNOWN_DIALOGUE_PATHS := [
 	"res://data/dialogue/m6_training_hall_postbattle.json",
 ]
 const BATTLE_SCENE_PATH := "res://scenes/battle/battle_sandbox.tscn"
+const BATTLE_REACTION_FACTS := [
+	"jukain_attacked_hiruko",
+	"hiruko_damaged_by_enemy",
+	"replacement_requirement_completed",
+]
 
 const CHARACTER_TEXTURES := {
 	"Jukain": {
@@ -54,6 +59,7 @@ var scene_ended := false
 var dialogue_ready := false
 var last_dialogue_error := ""
 var battle_launch_committed := false
+var executed_reaction_effect_node_ids: Dictionary = {}
 
 
 func _ready() -> void:
@@ -348,24 +354,102 @@ func _validate_condition_node(node: Dictionary, node_id: String) -> bool:
 		return _report_dialogue_error("Condition node '%s' requires a condition object." % node_id)
 
 	var condition: Dictionary = raw_condition
-	if not _has_only_fields(condition, ["type", "flag", "value"], "condition node '%s'" % node_id):
-		return false
 	var condition_type := _required_string(condition, "type", "condition node '%s'" % node_id)
-	if condition_type != "flag_equals":
-		return _report_dialogue_error(
-			"Unknown condition type '%s' in node '%s'." % [condition_type, node_id]
-		)
-	if _required_string(condition, "flag", "condition node '%s'" % node_id).is_empty():
-		return false
-	if not condition.has("value") or typeof(condition["value"]) != TYPE_BOOL:
-		return _report_dialogue_error(
-			"Condition node '%s' requires a boolean 'value'." % node_id
-		)
+	match condition_type:
+		"flag_equals":
+			if not _has_only_fields(
+				condition,
+				["type", "flag", "value"],
+				"condition node '%s'" % node_id
+			):
+				return false
+			if not _has_only_fields(
+				node,
+				["id", "type", "condition", "true_target", "false_target"],
+				"condition node '%s'" % node_id
+			):
+				return false
+			if _required_string(condition, "flag", "condition node '%s'" % node_id).is_empty():
+				return false
+			if not condition.has("value") or typeof(condition["value"]) != TYPE_BOOL:
+				return _report_dialogue_error(
+					"Condition node '%s' requires a boolean 'value'." % node_id
+				)
+		"battle_result_matches":
+			if not _validate_battle_result_condition(node, condition, node_id):
+				return false
+		_:
+			return _report_dialogue_error(
+				"Unknown condition type '%s' in node '%s'." % [condition_type, node_id]
+			)
 	if _required_string(node, "true_target", node_id).is_empty():
 		return false
 	if _required_string(node, "false_target", node_id).is_empty():
 		return false
 
+	return true
+
+
+func _validate_battle_result_condition(
+	node: Dictionary,
+	condition: Dictionary,
+	node_id: String
+) -> bool:
+	var condition_context := "battle-result condition node '%s'" % node_id
+	if not _has_only_fields(
+		condition,
+		[
+			"type",
+			"outcome",
+			"encounter_id",
+			"prescript_id",
+			"prescript_route",
+			"required_fact",
+		],
+		condition_context
+	):
+		return false
+	if not _has_only_fields(
+		node,
+		["id", "type", "condition", "effects", "true_target", "false_target"],
+		condition_context
+	):
+		return false
+	for field: String in [
+		"outcome",
+		"encounter_id",
+		"prescript_id",
+		"prescript_route",
+		"required_fact",
+	]:
+		if _required_string(condition, field, condition_context).is_empty():
+			return false
+	if condition["outcome"] != "VICTORY":
+		return _report_dialogue_error(
+			"%s only supports the VICTORY outcome." % condition_context
+		)
+	if not ["OBEY", "EXPLOIT", "DEFY"].has(condition["prescript_route"]):
+		return _report_dialogue_error(
+			"%s has unsupported Prescript route '%s'."
+			% [condition_context, condition["prescript_route"]]
+		)
+	if not BATTLE_REACTION_FACTS.has(condition["required_fact"]):
+		return _report_dialogue_error(
+			"%s has unsupported authoritative fact '%s'."
+			% [condition_context, condition["required_fact"]]
+		)
+	if not _validate_effects(node, condition_context):
+		return false
+	var effects: Array = node.get("effects", [])
+	if effects.size() != 1:
+		return _report_dialogue_error(
+			"%s requires exactly one contextual Bond effect." % condition_context
+		)
+	var effect: Dictionary = effects[0]
+	if effect.get("type") != "adjust_bond" or effect.get("bond") != "hiruko":
+		return _report_dialogue_error(
+			"%s requires one Hiruko adjust_bond effect." % condition_context
+		)
 	return true
 
 
@@ -537,13 +621,13 @@ func _on_option_selected(option_index: int) -> void:
 	_release_choice_focus()
 	choice_panel.hide()
 	var selected_option: Dictionary = options[option_index]
-	if not _apply_choice_effects(selected_option):
+	if not _apply_effects(selected_option):
 		return
 	_show_node(selected_option["target"])
 
 
-func _apply_choice_effects(option: Dictionary) -> bool:
-	for effect: Dictionary in option.get("effects", []):
+func _apply_effects(effect_owner: Dictionary) -> bool:
+	for effect: Dictionary in effect_owner.get("effects", []):
 		match effect["type"]:
 			"set_flag":
 				GameState.set_flag(effect["flag"], effect["value"])
@@ -557,13 +641,38 @@ func _apply_choice_effects(option: Dictionary) -> bool:
 
 func _show_condition(node: Dictionary) -> void:
 	var condition: Dictionary = node["condition"]
-	if condition["type"] != "flag_equals":
-		_report_runtime_error("Unknown condition type '%s'." % condition["type"])
-		return
-
-	var condition_matches: bool = GameState.get_flag(condition["flag"]) == condition["value"]
+	var condition_matches := false
+	match condition["type"]:
+		"flag_equals":
+			condition_matches = GameState.get_flag(condition["flag"]) == condition["value"]
+		"battle_result_matches":
+			condition_matches = _battle_result_matches(condition)
+			if condition_matches and not executed_reaction_effect_node_ids.has(node["id"]):
+				if not _apply_effects(node):
+					return
+				executed_reaction_effect_node_ids[node["id"]] = true
+		_:
+			_report_runtime_error("Unknown condition type '%s'." % condition["type"])
+			return
 	var target: String = node["true_target"] if condition_matches else node["false_target"]
 	_show_node(target)
+
+
+func _battle_result_matches(condition: Dictionary) -> bool:
+	var result: Dictionary = GameState.get_pending_battle_result()
+	if (
+		result.get("outcome") != condition["outcome"]
+		or result.get("encounter_id") != condition["encounter_id"]
+		or result.get("prescript_id") != condition["prescript_id"]
+		or result.get("prescript_route") != condition["prescript_route"]
+	):
+		return false
+	var raw_facts: Variant = result.get("facts")
+	if typeof(raw_facts) != TYPE_DICTIONARY:
+		return false
+	var facts: Dictionary = raw_facts
+	var required_fact: String = condition["required_fact"]
+	return typeof(facts.get(required_fact)) == TYPE_BOOL and facts[required_fact] == true
 
 
 func _save_game() -> void:

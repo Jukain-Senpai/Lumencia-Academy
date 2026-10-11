@@ -12,7 +12,18 @@ const ENCOUNTER_ID := "m6_training_hall_prototype"
 const RETURN_SEQUENCE := "m6_training_hall_postbattle"
 const TEST_USER_DIR := "Lumencia Academy M6.4 Regression"
 const TEST_SAVE_PATH := "user://lumencia_save.json"
-const NEUTRAL_TEXT := "[Prototype] Returned from battle."
+const FALLBACK_TEXT := "[Prototype] No valid post-battle reaction was available."
+const REACTION_STARTS := {
+	"OBEY": "obey_01",
+	"EXPLOIT": "exploit_01",
+	"DEFY": "defy_01",
+}
+const REACTION_TEXT := {
+	"OBEY": "You really hit me because that thing told you to.",
+	"EXPLOIT": "You moved out of the way on purpose.",
+	"DEFY": "You could've used me to clear the first Prescript.",
+}
+const REACTION_BOND := {"OBEY": -1, "EXPLOIT": -1, "DEFY": 1}
 
 var failures: Array[String] = []
 var checks := 0
@@ -64,11 +75,13 @@ func _test_postbattle_data_and_resolver() -> void:
 		return
 	var data: Dictionary = parsed
 	_check(data.get("background") == BACKGROUND_PATH, "DATA: post-battle sequence uses the wrong background")
-	_check(data.get("start") == "postbattle_01", "DATA: post-battle sequence has the wrong start node")
+	_check(data.get("start") == "check_direct_hit", "DATA: post-battle sequence has the wrong start node")
 	var nodes: Array = data.get("nodes", [])
-	_check(nodes.size() == 2, "DATA: neutral sequence is not the minimal line/end pair")
+	_check(nodes.size() == 21, "DATA: M6.5 changed the expected post-battle graph size")
 	var visible_lines := 0
 	var end_nodes := 0
+	var result_conditions := 0
+	var bond_effects := 0
 	for raw_node: Variant in nodes:
 		_check(typeof(raw_node) == TYPE_DICTIONARY, "DATA: post-battle node is not an object")
 		if typeof(raw_node) != TYPE_DICTIONARY:
@@ -77,17 +90,17 @@ func _test_postbattle_data_and_resolver() -> void:
 		match node.get("type", ""):
 			"line":
 				visible_lines += 1
-				_check(node.get("text") == NEUTRAL_TEXT, "DATA: placeholder line is not the approved neutral content")
-				_check(node.get("speaker") == "Hiruko" and node.get("expression") == "neutral", "DATA: placeholder does not reuse an existing neutral presentation")
-				_check(node.get("next") == "postbattle_end", "DATA: neutral line does not end directly")
+			"condition":
+				if node.get("condition", {}).get("type") == "battle_result_matches":
+					result_conditions += 1
+					bond_effects += node.get("effects", []).size()
 			"end":
 				end_nodes += 1
 			_:
-				_check(false, "DATA: post-battle sequence contains unsupported branching/action content")
-	_check(visible_lines == 1 and end_nodes == 1, "DATA: post-battle sequence is not neutral and non-branching")
-	var serialized := JSON.stringify(data).to_lower()
-	for forbidden: String in ["obey", "exploit", "defy", "adjust_bond", "pending_battle_result", "save_game"]:
-		_check(not serialized.contains(forbidden), "DATA: post-battle sequence contains forbidden M6.5/save content '%s'" % forbidden)
+				_check(false, "DATA: post-battle sequence contains an unsupported node type")
+	_check(visible_lines == 17 and end_nodes == 1, "DATA: M6.5 dialogue/end structure changed")
+	_check(result_conditions == 3 and bond_effects == 3, "DATA: contextual condition/effect count changed")
+	_check(not JSON.stringify(data).contains("[Prototype] Returned from battle."), "DATA: M6.4 placeholder remains visible")
 
 	var script: GDScript = load("res://scripts/vn/vn_prototype.gd")
 	_check(script != null, "RESOLVER: existing VN controller script did not load")
@@ -314,7 +327,7 @@ func _test_transient_save_reset_and_layout() -> void:
 			continue
 		vn.set_deferred("size", Vector2(viewport_size))
 		await process_frame
-		_check(vn.current_dialogue_path == POSTBATTLE_PATH and vn.dialogue_text.text == NEUTRAL_TEXT, "LAYOUT: post-battle content did not initialize at %s" % viewport_size)
+		_check(vn.current_dialogue_path == POSTBATTLE_PATH and vn.dialogue_text.text == FALLBACK_TEXT, "LAYOUT: safe post-battle fallback did not initialize at %s" % viewport_size)
 		_check(vn.story_background.get_global_rect().size == Vector2(viewport_size), "LAYOUT: Training Hall background does not fill %s" % viewport_size)
 		_check(_inside_viewport(vn.dialogue_panel, Vector2(viewport_size)), "LAYOUT: dialogue panel clips at %s" % viewport_size)
 		_check(_inside_viewport(vn.speaker_name, Vector2(viewport_size)) and _inside_viewport(vn.dialogue_text, Vector2(viewport_size)), "LAYOUT: post-battle text clips at %s" % viewport_size)
@@ -364,12 +377,13 @@ func _assert_postbattle_arrival(before_return: Dictionary, label: String) -> voi
 	if vn == null or vn.name != "VNPrototype":
 		return
 	_check(vn.current_dialogue_path == POSTBATTLE_PATH, "%s: wrong post-battle sequence loaded" % label)
-	_check(vn.current_node_id == "postbattle_01" and vn.dialogue_text.text == NEUTRAL_TEXT, "%s: neutral landing line is wrong" % label)
+	var route: String = before_return.get("prescript_route", "")
+	_check(vn.current_node_id == REACTION_STARTS.get(route, "") and vn.dialogue_text.text == REACTION_TEXT.get(route, ""), "%s: M6.5 reaction landing is wrong" % label)
 	_check(vn.sequence_background.resource_path == BACKGROUND_PATH, "%s: Training Hall continuity was lost" % label)
 	_check(game_state.get_pending_vn_sequence().is_empty(), "%s: successful VN initialization retained routing handoff" % label)
 	_check(game_state.get_pending_battle_context().is_empty(), "%s: completed encounter context was not cleared" % label)
 	_check(game_state.get_pending_battle_result() == before_return, "%s: scene return mutated the result" % label)
-	_check(game_state.get_bond("hiruko") == 0, "%s: M6.4 changed Hiruko Bond" % label)
+	_check(game_state.get_bond("hiruko") == REACTION_BOND.get(route, 0), "%s: M6.5 contextual Bond consequence is wrong" % label)
 	await _free_current_scene()
 
 
