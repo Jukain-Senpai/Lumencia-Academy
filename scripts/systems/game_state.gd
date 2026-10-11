@@ -6,6 +6,7 @@ var flags: Dictionary = {}
 var bonds: Dictionary = {}
 var pending_battle_context: Dictionary = {}
 var pending_battle_result: Dictionary = {}
+var pending_vn_sequence := ""
 var persistence_error := ""
 
 
@@ -36,6 +37,7 @@ func reset_state() -> void:
 	bonds.clear()
 	pending_battle_context.clear()
 	pending_battle_result.clear()
+	pending_vn_sequence = ""
 
 
 func prepare_battle_context(encounter_id: String, return_sequence: String) -> bool:
@@ -67,6 +69,21 @@ func get_pending_battle_result() -> Dictionary:
 
 func clear_pending_battle_result() -> void:
 	pending_battle_result.clear()
+
+
+func prepare_pending_vn_sequence(sequence_id: String) -> bool:
+	if sequence_id.is_empty() or not pending_vn_sequence.is_empty():
+		return false
+	pending_vn_sequence = sequence_id
+	return true
+
+
+func get_pending_vn_sequence() -> String:
+	return pending_vn_sequence
+
+
+func clear_pending_vn_sequence() -> void:
+	pending_vn_sequence = ""
 
 
 func has_save_file() -> bool:

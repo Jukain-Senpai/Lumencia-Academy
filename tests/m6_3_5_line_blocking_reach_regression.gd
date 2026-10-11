@@ -303,7 +303,7 @@ func _test_layout_and_scope() -> void:
 	_check(scene.get_node("%AllyMidUnits").get_child_count() == 5, "LAYOUT: five-card line did not render")
 	_check(is_equal_approx(battlefield.size.y, stable_height), "LAYOUT: five-card line changed battlefield height")
 	_check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/vn/vn_prototype.tscn", "SCOPE: main scene changed")
-	_check(not FileAccess.file_exists("res://data/dialogue/m6_training_hall_postbattle.json"), "SCOPE: M6.4 post-battle data exists")
+	_check(FileAccess.file_exists("res://data/dialogue/m6_training_hall_postbattle.json"), "M6.4: post-battle data is missing")
 	_check(game_state.get_bond("hiruko") == 0, "SCOPE: reach patch changed Hiruko Bond")
 	await _free_scene(scene)
 

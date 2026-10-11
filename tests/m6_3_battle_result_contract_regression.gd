@@ -319,7 +319,7 @@ func _test_retained_m6_flow_and_layout() -> void:
 			_check(line_count == 6 and launch_count == 1, "M6.2: six-line explicit launch flow changed")
 	_check(JukainPrescriptStateModel.PRESCRIPT_ID == "prototype_hiruko_hp", "IDENTITY: Prescript ID is not stable")
 	_check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/vn/vn_prototype.tscn", "SCOPE: main scene changed")
-	_check(not FileAccess.file_exists("res://data/dialogue/m6_training_hall_postbattle.json"), "SCOPE: M6.4 post-battle dialogue exists")
+	_check(FileAccess.file_exists("res://data/dialogue/m6_training_hall_postbattle.json"), "M6.4: post-battle dialogue is missing")
 	_check(game_state.get_bond("hiruko") == 0, "SCOPE: M6.3 changed Hiruko Bond")
 
 	var scene := await _new_battle(false)
@@ -347,6 +347,8 @@ func _new_battle(integrated: bool) -> Control:
 		return null
 	var scene: Control = packed.instantiate()
 	scene.automatic_enemy_turns_enabled = false
+	# This retained suite isolates the M6.3 contract; M6.4 owns automatic routing coverage.
+	scene.automatic_vn_return_enabled = false
 	root.add_child(scene)
 	current_scene = scene
 	active_scene = scene

@@ -194,11 +194,13 @@ func _test_real_vn_to_battle_path_and_double_guard() -> void:
 
 	for enemy: BattleUnit in battle.enemy_units:
 		_defeat(enemy)
-	_check(battle._check_battle_result() and battle.battle_result == battle.BattleResult.VICTORY, "NO RETURN: integrated Victory did not retain terminal battle behavior")
+	_check(battle._check_battle_result() and battle.battle_result == battle.BattleResult.VICTORY, "M6.4: integrated Victory was not recognized before return")
 	await process_frame
-	_check(current_scene == battle and current_scene.name == "BattleSandbox", "NO RETURN: Victory incorrectly returned to VN")
+	await process_frame
+	_check(current_scene != null and current_scene.name == "VNPrototype" and current_scene.current_dialogue_path == "res://data/dialogue/m6_training_hall_postbattle.json", "M6.4: integrated Victory did not return through the reusable VN")
 	_check(game_state.get_bond("hiruko") == 0, "SCOPE: integrated Victory changed Hiruko Bond")
-	await _free_scene(battle)
+	if current_scene != null:
+		await _free_scene(current_scene)
 
 
 func _test_standalone_battle_fallback() -> void:
@@ -250,7 +252,7 @@ func _test_layout_and_scope_boundaries() -> void:
 	_check(_inside_viewport(scene.dialogue_panel, Vector2(1440, 810)), "LAYOUT: dialogue panel clips at 1440×810")
 	_check(ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/vn/vn_prototype.tscn", "SCOPE: M6.2 changed the main project scene")
 	_check(not FileAccess.file_exists("res://scripts/battle/battle_result_contract.gd"), "SCOPE: M6.2 created a battle result contract")
-	_check(not FileAccess.file_exists("res://data/dialogue/m6_training_hall_postbattle.json"), "SCOPE: M6.2 created post-battle VN data")
+	_check(FileAccess.file_exists("res://data/dialogue/m6_training_hall_postbattle.json"), "M6.4: post-battle VN data is missing")
 	_check(game_state.get_bond("hiruko") == 0, "SCOPE: M6.2 introduced a Bond consequence")
 	await _free_scene(scene)
 

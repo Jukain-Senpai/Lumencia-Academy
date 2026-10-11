@@ -6,6 +6,8 @@ const BattleUnitModel := preload("res://scripts/battle/battle_unit.gd")
 const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_state.gd")
 const JukainCombatStateModel := preload("res://scripts/battle/jukain_combat_state.gd")
 const JukainPrescriptStateModel := preload("res://scripts/battle/jukain_prescript_state.gd")
+const VNPrototypeModel := preload("res://scripts/vn/vn_prototype.gd")
+const VN_SCENE_PATH := "res://scenes/vn/vn_prototype.tscn"
 const UNIT_CARD_HEIGHT := 44.0
 const UNIT_CARD_GAP := 2.0
 const HIRUKO_UNIT_ID: StringName = &"party_1"
@@ -113,6 +115,7 @@ var valid_skill_targets: Array[BattleUnit] = []
 var action_in_progress := false
 var battle_result: BattleResult = BattleResult.NONE
 var automatic_enemy_turns_enabled := true
+var automatic_vn_return_enabled := true
 var enemy_action_pending := false
 var battle_generation := 0
 var hiruko_unit: BattleUnit = null
@@ -123,6 +126,9 @@ var jukain_prescript: RefCounted = null
 var battle_context: Dictionary = {}
 var result_facts: Dictionary = {}
 var battle_result_committed := false
+var battle_return_committed := false
+var last_battle_return_error := ""
+var vn_return_scene_path := VN_SCENE_PATH
 var selected_inspector_unit_id: StringName = HIRUKO_UNIT_ID
 var ally_attack_confirmation_target_id: StringName = &""
 var selecting_jukain_chain_target := false
@@ -166,6 +172,8 @@ func _ready() -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if battle_return_committed:
+		return
 	if _handle_jukain_replica_shortcut(event):
 		get_viewport().set_input_as_handled()
 
@@ -187,6 +195,8 @@ func _handle_jukain_replica_shortcut(event: InputEvent) -> bool:
 
 
 func restart_battle() -> void:
+	if battle_return_committed:
+		return
 	battle_generation += 1
 	enemy_action_pending = false
 	GameState.clear_pending_battle_result()
@@ -1540,6 +1550,13 @@ func _end_battle(result: BattleResult) -> void:
 		_append_combat_log("Defeat!")
 	_render_battlefield()
 	_refresh_turn_ui()
+	if (
+		result == BattleResult.VICTORY
+		and battle_result_committed
+		and automatic_vn_return_enabled
+		and get_tree().current_scene == self
+	):
+		_request_battle_return()
 
 
 func _reset_battle_result_tracking() -> void:
@@ -1551,10 +1568,12 @@ func _reset_battle_result_tracking() -> void:
 		"karma_gained": 0,
 	}
 	battle_result_committed = false
+	battle_return_committed = false
+	last_battle_return_error = ""
 
 
 func _commit_pending_battle_result(result: BattleResult) -> bool:
-	if battle_result_committed or not _has_integrated_battle_context():
+	if battle_result_committed or not _has_integrated_encounter():
 		return false
 	var outcome := ""
 	match result:
@@ -1580,13 +1599,59 @@ func _commit_pending_battle_result(result: BattleResult) -> bool:
 	return true
 
 
-func _has_integrated_battle_context() -> bool:
+func _has_integrated_encounter() -> bool:
 	return (
 		typeof(battle_context.get("encounter_id")) == TYPE_STRING
 		and not String(battle_context["encounter_id"]).is_empty()
-		and typeof(battle_context.get("return_sequence")) == TYPE_STRING
-		and not String(battle_context["return_sequence"]).is_empty()
 	)
+
+
+func _request_battle_return() -> bool:
+	if battle_return_committed or battle_result != BattleResult.VICTORY:
+		return false
+	if not battle_result_committed or GameState.get_pending_battle_result().is_empty():
+		return _report_battle_return_error(
+			"Victory return was blocked because no committed battle result exists."
+		)
+
+	var raw_return_sequence: Variant = battle_context.get("return_sequence")
+	if typeof(raw_return_sequence) != TYPE_STRING or String(raw_return_sequence).is_empty():
+		return _report_battle_return_error(
+			"Victory return was blocked because return_sequence is missing or empty."
+		)
+	var return_sequence := String(raw_return_sequence)
+	var dialogue_path := VNPrototypeModel.resolve_dialogue_sequence_path(return_sequence)
+	if dialogue_path.is_empty():
+		return _report_battle_return_error(
+			"Victory return sequence '%s' cannot be resolved by the VN loader."
+			% return_sequence
+		)
+	if not GameState.prepare_pending_vn_sequence(return_sequence):
+		return _report_battle_return_error(
+			"Victory return was blocked because a VN routing instruction is already pending."
+		)
+
+	battle_return_committed = true
+	last_battle_return_error = ""
+	var change_error := get_tree().change_scene_to_file(vn_return_scene_path)
+	if change_error != OK:
+		GameState.clear_pending_vn_sequence()
+		battle_return_committed = false
+		return _report_battle_return_error(
+			"Could not return to VN scene '%s': %s"
+			% [vn_return_scene_path, error_string(change_error)]
+		)
+
+	GameState.clear_pending_battle_context()
+	return true
+
+
+func _report_battle_return_error(message: String) -> bool:
+	last_battle_return_error = message
+	push_error("Battle return error: %s" % message)
+	_append_combat_log(message)
+	status_label.text = "Victory secured, but the story return failed. See the debugger."
+	return false
 
 
 func _opposing_team(team: BattleUnit.Team) -> BattleUnit.Team:

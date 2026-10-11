@@ -1,10 +1,14 @@
 extends Control
 
 const INITIAL_DIALOGUE_PATH := "res://data/dialogue/vn_prototype_m1.json"
+const DIALOGUE_SEQUENCE_PATHS := {
+	"m6_training_hall_postbattle": "res://data/dialogue/m6_training_hall_postbattle.json",
+}
 const KNOWN_DIALOGUE_PATHS := [
 	INITIAL_DIALOGUE_PATH,
 	"res://data/dialogue/vn_hallway_m2_3.json",
 	"res://data/dialogue/m6_training_hall_prebattle.json",
+	"res://data/dialogue/m6_training_hall_postbattle.json",
 ]
 const BATTLE_SCENE_PATH := "res://scenes/battle/battle_sandbox.tscn"
 
@@ -60,13 +64,36 @@ func _ready() -> void:
 	load_button.pressed.connect(_load_game)
 	new_run_button.pressed.connect(_start_new_run)
 
-	dialogue_ready = _load_dialogue_data(initial_dialogue_path)
+	var pending_sequence_id := GameState.get_pending_vn_sequence()
+	var startup_dialogue_path := initial_dialogue_path
+	if not pending_sequence_id.is_empty():
+		startup_dialogue_path = resolve_dialogue_sequence_path(pending_sequence_id)
+		if startup_dialogue_path.is_empty():
+			_report_dialogue_error(
+				"Could not resolve pending VN sequence '%s'." % pending_sequence_id
+			)
+
+	dialogue_ready = (
+		not startup_dialogue_path.is_empty()
+		and _load_dialogue_data(startup_dialogue_path)
+	)
 	if dialogue_ready:
+		if not pending_sequence_id.is_empty():
+			GameState.clear_pending_vn_sequence()
 		_reset_prototype()
 	else:
 		_show_dialogue_error()
 	save_status_label.text = "Save available." if GameState.has_save_file() else "No save available."
 	_refresh_persistence_controls()
+
+
+static func resolve_dialogue_sequence_path(sequence_id: String) -> String:
+	if sequence_id.is_empty() or not DIALOGUE_SEQUENCE_PATHS.has(sequence_id):
+		return ""
+	var dialogue_path: String = DIALOGUE_SEQUENCE_PATHS[sequence_id]
+	if not ResourceLoader.exists(dialogue_path):
+		return ""
+	return dialogue_path
 
 
 func _unhandled_input(event: InputEvent) -> void:

@@ -1,0 +1,18 @@
+{
+  "background": "res://assets/art/backgrounds/academy_training_hall.png",
+  "start": "postbattle_01",
+  "nodes": [
+    {
+      "id": "postbattle_01",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "[Prototype] Returned from battle.",
+      "next": "postbattle_end"
+    },
+    {
+      "id": "postbattle_end",
+      "type": "end"
+    }
+  ]
+}
