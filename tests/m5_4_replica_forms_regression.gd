@@ -144,11 +144,14 @@ func _test_projection_validation() -> void:
 	scene.jukain_unit.line = BattleUnitModel.Line.BACK
 	_prepare_target(scene, &"enemy_a", BattleUnitModel.Line.MID, 300)
 	_check(_open_builder(scene, &"enemy_a"), "Projection fixture could not open on Mid target")
-	_check(not scene.select_jukain_chain_form(scene.JukainReplicaForm.WHIP), "Back Whip incorrectly reached Mid target")
-	_check(scene.jukain_chain_slots.is_empty() and "projected position" in scene.status_label.text, "Rejected Whip changed a slot or lacked feedback")
+	# M6.3.5 supersedes semantic-line Whip reach: with Front empty, Mid is depth 1.
+	_check(scene.select_jukain_chain_form(scene.JukainReplicaForm.WHIP), "Back Whip did not reach depth-1 Mid target")
+	var projection: Dictionary = scene._project_jukain_chain_lines()
+	_check(projection["jukain_line"] == BattleUnitModel.Line.BACK and projection["target_line"] == BattleUnitModel.Line.FRONT, "Projected depth-1 Whip did not pull Mid target")
+	_check(scene.undo_jukain_chain_form(), "Projected depth-1 Whip Undo failed")
 	_check(scene.select_jukain_chain_form(scene.JukainReplicaForm.SWORD), "Projected Sword was rejected")
 	_check(scene.select_jukain_chain_form(scene.JukainReplicaForm.WHIP), "Sword→Whip was not accepted from projected Mid")
-	var projection: Dictionary = scene._project_jukain_chain_lines()
+	projection = scene._project_jukain_chain_lines()
 	_check(projection["jukain_line"] == BattleUnitModel.Line.MID and projection["target_line"] == BattleUnitModel.Line.FRONT, "Sword/Whip projection did not apply ordered line changes")
 	_check(scene.select_jukain_chain_form(scene.JukainReplicaForm.WHIP), "Projected second Whip was rejected against pulled Front target")
 	_check(scene.undo_jukain_chain_form(), "Projection Undo failed")
@@ -193,7 +196,8 @@ func _test_form_rules_and_rounding() -> void:
 	_check(scene._calculate_jukain_replica_damage(scene.JukainReplicaForm.SWORD, 3, BattleUnitModel.Line.FRONT, BattleUnitModel.Line.FRONT) == 11, "SCYTHE K: non-Scythe Hit 4 received finisher bonus")
 	_check(scene._calculate_jukain_replica_damage(scene.JukainReplicaForm.WHIP, 0, BattleUnitModel.Line.BACK, BattleUnitModel.Line.FRONT) == 7, "WHIP D: Back efficiency did not use one final ceiling")
 	_check(scene._advance_line_toward_front(BattleUnitModel.Line.BACK) == BattleUnitModel.Line.MID and scene._advance_line_toward_front(BattleUnitModel.Line.MID) == BattleUnitModel.Line.FRONT and scene._advance_line_toward_front(BattleUnitModel.Line.FRONT) == BattleUnitModel.Line.FRONT, "SWORD B–D: Sword movement table is wrong")
-	_check(scene._can_whip_reach(BattleUnitModel.Line.FRONT, BattleUnitModel.Line.MID) and scene._can_whip_reach(BattleUnitModel.Line.MID, BattleUnitModel.Line.FRONT) and scene._can_whip_reach(BattleUnitModel.Line.BACK, BattleUnitModel.Line.FRONT) and not scene._can_whip_reach(BattleUnitModel.Line.BACK, BattleUnitModel.Line.MID), "WHIP E: reach rules are wrong")
+	# M6.3.5 supersedes target-line checks with attacker-line maximum occupied depth.
+	_check(scene._jukain_replica_max_occupied_depth(scene.JukainReplicaForm.WHIP, BattleUnitModel.Line.FRONT) == 3 and scene._jukain_replica_max_occupied_depth(scene.JukainReplicaForm.WHIP, BattleUnitModel.Line.MID) == 2 and scene._jukain_replica_max_occupied_depth(scene.JukainReplicaForm.WHIP, BattleUnitModel.Line.BACK) == 1, "WHIP E: occupied-depth reach profile is wrong")
 	_check(scene._pull_line_toward_front(BattleUnitModel.Line.BACK) == BattleUnitModel.Line.MID and scene._pull_line_toward_front(BattleUnitModel.Line.MID) == BattleUnitModel.Line.FRONT and scene._pull_line_toward_front(BattleUnitModel.Line.FRONT) == BattleUnitModel.Line.FRONT, "WHIP G–I: displacement table is wrong")
 	await _free_scene(scene)
 

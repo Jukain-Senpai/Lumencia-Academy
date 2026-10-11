@@ -134,11 +134,13 @@ func _test_builder_selection_undo_and_cancel() -> void:
 	var hp_before: int = enemy_a.current_hp
 	var inspector_before: StringName = scene.selected_inspector_unit_id
 	_check(scene.begin_jukain_form_chain(), "Form Chain target selection did not open")
-	_check(_ids(scene.valid_jukain_chain_targets) == [&"enemy_a", &"enemy_b"], "Form Chain did not use nearest occupied enemy line")
-	_check(not scene.select_jukain_chain_target(&"enemy_c"), "Form Chain accepted protected Mid target")
+	# M6.3.5 supersedes nearest-line chain targeting because Scythe reaches depth 3.
+	_check(_ids(scene.valid_jukain_chain_targets) == [&"enemy_a", &"enemy_b", &"enemy_c", &"enemy_d"], "Form Chain did not expose every Scythe-reachable living enemy")
 	_check(scene.cancel_target_selection(), "Form Chain target-selection Cancel failed")
 	_check(scene.current_unit == actor_before and enemy_a.current_hp == hp_before and not scene._is_jukain_chain_selection_active(), "Target Cancel changed gameplay or retained target state")
 	_check(scene.selected_inspector_unit_id == inspector_before, "Target Cancel changed inspector selection")
+	_check(scene.begin_jukain_form_chain() and scene.select_jukain_chain_target(&"enemy_c"), "Form Chain did not accept Scythe-reachable Mid target")
+	_check(scene.cancel_action_selection(), "Deep held-target builder did not cancel")
 	_check(scene.begin_jukain_form_chain(), "Card-target precedence fixture did not reopen selection")
 	_click_card(scene, &"enemy_a")
 	_check(scene.jukain_chain_target_id == &"enemy_a" and not scene.selecting_jukain_chain_target, "Enemy card click did not select the Form Chain target")

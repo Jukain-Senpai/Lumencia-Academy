@@ -32,6 +32,8 @@ enum JukainReplicaForm {
 }
 
 const UNASSIGNED_REPLICA_FORM := -1
+const MELEE_MAX_OCCUPIED_DEPTH := 1
+const FULL_FIELD_MAX_OCCUPIED_DEPTH := 3
 const REPLICA_SLOT_MAPPING: Array[Dictionary] = [
 	{"action": &"jukain_replica_slot_1", "form": JukainReplicaForm.SCYTHE},
 	{"action": &"jukain_replica_slot_2", "form": JukainReplicaForm.SWORD},
@@ -472,15 +474,12 @@ func select_jukain_chain_form(form: JukainReplicaForm) -> bool:
 		or jukain_chain_slots.size() >= 4
 	):
 		return false
-	var projection := _project_jukain_chain_lines()
+	var candidate_forms: Array[JukainReplicaForm] = []
+	candidate_forms.assign(jukain_chain_slots)
+	candidate_forms.append(form)
+	var projection := _project_jukain_chain_lines_for_forms(candidate_forms)
 	if not projection["valid"]:
-		status_label.text = "The current chain has an invalid projected position."
-		return false
-	if (
-		form == JukainReplicaForm.WHIP
-		and not _can_whip_reach(projection["jukain_line"], projection["target_line"])
-	):
-		status_label.text = "Whip cannot reach this target from the projected position."
+		status_label.text = "%s cannot reach this target from the projected position." % _jukain_replica_form_label(form)
 		return false
 	jukain_chain_slots.append(form)
 	_refresh_action_ui()
@@ -535,11 +534,12 @@ func execute_jukain_form_chain() -> bool:
 					BattleUnitModel.line_name(jukain_line_before),
 					BattleUnitModel.line_name(jukain_unit.line),
 				])
-		if (
-			form == JukainReplicaForm.WHIP
-			and not _can_whip_reach(jukain_unit.line, target.line)
-		):
-			_append_combat_log("Replica Form Chain stops: Whip cannot reach the retained target.")
+		var max_depth := _jukain_replica_max_occupied_depth(form, jukain_unit.line)
+		if not _is_target_reachable(jukain_unit, target, max_depth):
+			_append_combat_log(
+				"Replica Form Chain stops: %s cannot reach the retained target."
+				% _jukain_replica_form_label(form)
+			)
 			break
 		var damage := _calculate_jukain_replica_damage(
 			form, hit_index, jukain_unit.line, target.line
@@ -836,6 +836,12 @@ func _can_accept_jukain_replica_shortcut() -> bool:
 
 
 func _project_jukain_chain_lines() -> Dictionary:
+	return _project_jukain_chain_lines_for_forms(jukain_chain_slots)
+
+
+func _project_jukain_chain_lines_for_forms(
+	forms: Array[JukainReplicaForm]
+) -> Dictionary:
 	var target := _find_unit_by_id(jukain_chain_target_id)
 	if (
 		jukain_unit == null
@@ -847,13 +853,20 @@ func _project_jukain_chain_lines() -> Dictionary:
 		return {"valid": false}
 	var projected_jukain_line: BattleUnit.Line = jukain_unit.line
 	var projected_target_line: BattleUnit.Line = target.line
-	for form: JukainReplicaForm in jukain_chain_slots:
+	var projected_lines := {
+		jukain_unit.stable_id: projected_jukain_line,
+		target.stable_id: projected_target_line,
+	}
+	for form: JukainReplicaForm in forms:
 		if form == JukainReplicaForm.SWORD:
 			projected_jukain_line = _advance_line_toward_front(projected_jukain_line)
-		elif form == JukainReplicaForm.WHIP:
-			if not _can_whip_reach(projected_jukain_line, projected_target_line):
-				return {"valid": false}
+			projected_lines[jukain_unit.stable_id] = projected_jukain_line
+		var max_depth := _jukain_replica_max_occupied_depth(form, projected_jukain_line)
+		if not _is_target_reachable(jukain_unit, target, max_depth, projected_lines):
+			return {"valid": false}
+		if form == JukainReplicaForm.WHIP:
 			projected_target_line = _pull_line_toward_front(projected_target_line)
+			projected_lines[target.stable_id] = projected_target_line
 	return {
 		"valid": true,
 		"jukain_line": projected_jukain_line,
@@ -879,10 +892,23 @@ func _pull_line_toward_front(line: BattleUnit.Line) -> BattleUnit.Line:
 	return BattleUnitModel.Line.FRONT
 
 
-func _can_whip_reach(jukain_line: BattleUnit.Line, target_line: BattleUnit.Line) -> bool:
-	if jukain_line == BattleUnitModel.Line.BACK:
-		return target_line == BattleUnitModel.Line.FRONT
-	return target_line in [BattleUnitModel.Line.FRONT, BattleUnitModel.Line.MID]
+func _jukain_replica_max_occupied_depth(
+	form: JukainReplicaForm, jukain_line: BattleUnit.Line
+) -> int:
+	match form:
+		JukainReplicaForm.SCYTHE:
+			return FULL_FIELD_MAX_OCCUPIED_DEPTH
+		JukainReplicaForm.SWORD:
+			return MELEE_MAX_OCCUPIED_DEPTH
+		JukainReplicaForm.WHIP:
+			match jukain_line:
+				BattleUnitModel.Line.BACK:
+					return 1
+				BattleUnitModel.Line.MID:
+					return 2
+				BattleUnitModel.Line.FRONT:
+					return 3
+	return 0
 
 
 func _jukain_replica_efficiency_percent(
@@ -938,14 +964,75 @@ func _calculate_jukain_replica_damage(
 
 
 func _get_valid_jukain_chain_targets() -> Array[BattleUnit]:
-	var targets: Array[BattleUnit] = []
 	if jukain_unit == null or not _is_living(jukain_unit):
+		return []
+	return _get_reachable_opponents(jukain_unit, FULL_FIELD_MAX_OCCUPIED_DEPTH)
+
+
+func _get_occupied_line_depth(
+	team: BattleUnit.Team, target_line: BattleUnit.Line, projected_lines: Dictionary = {}
+) -> int:
+	var units := party_units if team == BattleUnitModel.Team.PARTY else enemy_units
+	var occupied_depth := 0
+	for line: BattleUnit.Line in [
+		BattleUnitModel.Line.FRONT,
+		BattleUnitModel.Line.MID,
+		BattleUnitModel.Line.BACK,
+	]:
+		var line_is_occupied := false
+		for unit: BattleUnit in units:
+			var projected_line: BattleUnit.Line = projected_lines.get(unit.stable_id, unit.line)
+			if projected_line == line and _is_living(unit):
+				line_is_occupied = true
+				break
+		if not line_is_occupied:
+			continue
+		occupied_depth += 1
+		if line == target_line:
+			return occupied_depth
+	return -1
+
+
+func _get_nearest_occupied_line(team: BattleUnit.Team) -> int:
+	for line: BattleUnit.Line in [
+		BattleUnitModel.Line.FRONT,
+		BattleUnitModel.Line.MID,
+		BattleUnitModel.Line.BACK,
+	]:
+		if _get_occupied_line_depth(team, line) == 1:
+			return line
+	return -1
+
+
+func _is_target_reachable(
+	attacker: BattleUnit,
+	target: BattleUnit,
+	max_occupied_depth: int,
+	projected_lines: Dictionary = {}
+) -> bool:
+	if (
+		attacker == null
+		or target == null
+		or not _is_living(attacker)
+		or not _is_living(target)
+		or attacker.team == target.team
+		or max_occupied_depth <= 0
+	):
+		return false
+	var target_line: BattleUnit.Line = projected_lines.get(target.stable_id, target.line)
+	var target_depth := _get_occupied_line_depth(target.team, target_line, projected_lines)
+	return target_depth > 0 and target_depth <= max_occupied_depth
+
+
+func _get_reachable_opponents(
+	attacker: BattleUnit, max_occupied_depth: int
+) -> Array[BattleUnit]:
+	var targets: Array[BattleUnit] = []
+	if attacker == null or not _is_living(attacker):
 		return targets
-	var nearest_line := _get_nearest_occupied_line(BattleUnitModel.Team.ENEMY)
-	if nearest_line < 0:
-		return targets
-	for unit: BattleUnit in enemy_units:
-		if unit.line == nearest_line and _is_living(unit):
+	var opposing_units := enemy_units if attacker.team == BattleUnitModel.Team.PARTY else party_units
+	for unit: BattleUnit in opposing_units:
+		if _is_target_reachable(attacker, unit, max_occupied_depth):
 			targets.append(unit)
 	targets.sort_custom(
 		func(first: BattleUnit, second: BattleUnit) -> bool:
@@ -954,37 +1041,8 @@ func _get_valid_jukain_chain_targets() -> Array[BattleUnit]:
 	return targets
 
 
-func _get_nearest_occupied_line(team: BattleUnit.Team) -> int:
-	var units := party_units if team == BattleUnitModel.Team.PARTY else enemy_units
-	for line: BattleUnit.Line in [
-		BattleUnitModel.Line.FRONT,
-		BattleUnitModel.Line.MID,
-		BattleUnitModel.Line.BACK,
-	]:
-		for unit: BattleUnit in units:
-			if unit.line == line and _is_living(unit):
-				return line
-	return -1
-
-
 func _get_valid_attack_targets(attacker: BattleUnit) -> Array[BattleUnit]:
-	var targets: Array[BattleUnit] = []
-	if attacker == null or not _is_living(attacker):
-		return targets
-
-	var opposing_team: BattleUnit.Team = (
-		BattleUnitModel.Team.ENEMY
-		if attacker.team == BattleUnitModel.Team.PARTY
-		else BattleUnitModel.Team.PARTY
-	)
-	var nearest_line := _get_nearest_occupied_line(opposing_team)
-	if nearest_line < 0:
-		return targets
-
-	var opposing_units := enemy_units if opposing_team == BattleUnitModel.Team.ENEMY else party_units
-	for unit: BattleUnit in opposing_units:
-		if unit.line == nearest_line and _is_living(unit):
-			targets.append(unit)
+	var targets := _get_reachable_opponents(attacker, MELEE_MAX_OCCUPIED_DEPTH)
 	if (
 		attacker == jukain_unit
 		and jukain_prescript != null
