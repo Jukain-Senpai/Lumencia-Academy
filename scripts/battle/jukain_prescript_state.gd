@@ -13,6 +13,7 @@ enum Phase {
 
 const ORIGINAL_REQUIREMENT := "Make Hiruko lose HP before your next turn."
 const REPLACEMENT_REQUIREMENT := "Take damage from an enemy."
+const PRESCRIPT_ID := "prototype_hiruko_hp"
 const KARMA_DAMAGE_PERCENT_PER_STACK := 20
 const SOURCE_JUKAIN_ALLY_ATTACK: StringName = &"jukain_ally_attack"
 const SOURCE_ENEMY_ATTACK: StringName = &"enemy_attack"

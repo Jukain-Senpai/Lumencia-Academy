@@ -119,6 +119,8 @@ var jukain_unit: BattleUnit = null
 var jukain_state: RefCounted = null
 var jukain_prescript: RefCounted = null
 var battle_context: Dictionary = {}
+var result_facts: Dictionary = {}
+var battle_result_committed := false
 var selected_inspector_unit_id: StringName = HIRUKO_UNIT_ID
 var ally_attack_confirmation_target_id: StringName = &""
 var selecting_jukain_chain_target := false
@@ -185,6 +187,8 @@ func _handle_jukain_replica_shortcut(event: InputEvent) -> bool:
 func restart_battle() -> void:
 	battle_generation += 1
 	enemy_action_pending = false
+	GameState.clear_pending_battle_result()
+	_reset_battle_result_tracking()
 	var rebuilt_party := _build_units(PARTY_FIXTURES, BattleUnitModel.Team.PARTY)
 	var rebuilt_enemies := _build_units(ENEMY_FIXTURES, BattleUnitModel.Team.ENEMY)
 	if (
@@ -773,6 +777,7 @@ func _process_jukain_turn_start() -> StringName:
 	if current_unit != jukain_unit or jukain_prescript == null:
 		return &"none"
 	var token := StringName("%d:%d:%d" % [battle_generation, round_number, turn_index])
+	var karma_before: int = jukain_prescript.karma_stacks
 	var result: StringName = jukain_prescript.on_jukain_turn_started(
 		token, hiruko_unit.current_hp
 	)
@@ -781,6 +786,7 @@ func _process_jukain_turn_start() -> StringName:
 			"Prescript active: %s" % JukainPrescriptStateModel.ORIGINAL_REQUIREMENT
 		)
 	elif result == &"defied":
+		result_facts["karma_gained"] += maxi(0, jukain_prescript.karma_stacks - karma_before)
 		_append_combat_log("Prescript deadline reached.")
 		_append_combat_log("Original requirement defied.")
 		_append_combat_log("Karma increased to %d." % jukain_prescript.karma_stacks)
@@ -1101,6 +1107,10 @@ func _commit_basic_attack(
 			)
 
 	if target == hiruko_unit and target.current_hp < target_hp_before:
+		if is_confirmed_jukain_ally_attack:
+			result_facts["jukain_attacked_hiruko"] = true
+		elif attacker.team == BattleUnitModel.Team.ENEMY:
+			result_facts["hiruko_damaged_by_enemy"] = true
 		var hiruko_source: StringName = (
 			JukainPrescriptStateModel.SOURCE_JUKAIN_ALLY_ATTACK
 			if is_confirmed_jukain_ally_attack
@@ -1119,6 +1129,7 @@ func _commit_basic_attack(
 			target_hp_before, target.current_hp
 		)
 	):
+		result_facts["replacement_requirement_completed"] = true
 		_append_combat_log("Replacement complete.")
 		_append_combat_log("Prescript resolved: DEFY.")
 		_resolve_jukain_prescript_transition("DEFY")
@@ -1138,7 +1149,11 @@ func _resolve_jukain_prescript_transition(route: String) -> bool:
 	):
 		return false
 	if route == "OBEY":
+		var blessing_before: int = jukain_state.blessing_stacks
 		jukain_state.grant_blessing()
+		result_facts["blessing_gained"] += maxi(
+			0, jukain_state.blessing_stacks - blessing_before
+		)
 		_append_combat_log("Blessing of the Index +1.")
 		_append_combat_log("Jukain damage +10%.")
 	if jukain_state.unlock():
@@ -1452,6 +1467,7 @@ func _end_battle(result: BattleResult) -> void:
 	if battle_result != BattleResult.NONE:
 		return
 	battle_result = result
+	_commit_pending_battle_result(result)
 	battle_generation += 1
 	enemy_action_pending = false
 	current_unit = null
@@ -1466,6 +1482,53 @@ func _end_battle(result: BattleResult) -> void:
 		_append_combat_log("Defeat!")
 	_render_battlefield()
 	_refresh_turn_ui()
+
+
+func _reset_battle_result_tracking() -> void:
+	result_facts = {
+		"jukain_attacked_hiruko": false,
+		"hiruko_damaged_by_enemy": false,
+		"replacement_requirement_completed": false,
+		"blessing_gained": 0,
+		"karma_gained": 0,
+	}
+	battle_result_committed = false
+
+
+func _commit_pending_battle_result(result: BattleResult) -> bool:
+	if battle_result_committed or not _has_integrated_battle_context():
+		return false
+	var outcome := ""
+	match result:
+		BattleResult.VICTORY:
+			outcome = "VICTORY"
+		BattleResult.DEFEAT:
+			outcome = "DEFEAT"
+		_:
+			return false
+	var route: String = jukain_prescript.get_route_label() if jukain_prescript != null else "NONE"
+	if route == "NONE":
+		route = "UNRESOLVED"
+	GameState.set_pending_battle_result(
+		{
+			"outcome": outcome,
+			"encounter_id": battle_context["encounter_id"],
+			"prescript_id": JukainPrescriptStateModel.PRESCRIPT_ID,
+			"prescript_route": route,
+			"facts": result_facts.duplicate(true),
+		}
+	)
+	battle_result_committed = true
+	return true
+
+
+func _has_integrated_battle_context() -> bool:
+	return (
+		typeof(battle_context.get("encounter_id")) == TYPE_STRING
+		and not String(battle_context["encounter_id"]).is_empty()
+		and typeof(battle_context.get("return_sequence")) == TYPE_STRING
+		and not String(battle_context["return_sequence"]).is_empty()
+	)
 
 
 func _opposing_team(team: BattleUnit.Team) -> BattleUnit.Team:

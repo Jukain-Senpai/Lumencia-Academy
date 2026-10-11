@@ -5,6 +5,7 @@ const SAVE_PATH := "user://lumencia_save.json"
 var flags: Dictionary = {}
 var bonds: Dictionary = {}
 var pending_battle_context: Dictionary = {}
+var pending_battle_result: Dictionary = {}
 var persistence_error := ""
 
 
@@ -34,11 +35,13 @@ func reset_state() -> void:
 	flags.clear()
 	bonds.clear()
 	pending_battle_context.clear()
+	pending_battle_result.clear()
 
 
 func prepare_battle_context(encounter_id: String, return_sequence: String) -> bool:
 	if encounter_id.is_empty() or return_sequence.is_empty() or not pending_battle_context.is_empty():
 		return false
+	pending_battle_result.clear()
 	pending_battle_context = {
 		"encounter_id": encounter_id,
 		"return_sequence": return_sequence,
@@ -52,6 +55,18 @@ func get_pending_battle_context() -> Dictionary:
 
 func clear_pending_battle_context() -> void:
 	pending_battle_context.clear()
+
+
+func set_pending_battle_result(result: Dictionary) -> void:
+	pending_battle_result = result.duplicate(true)
+
+
+func get_pending_battle_result() -> Dictionary:
+	return pending_battle_result.duplicate(true)
+
+
+func clear_pending_battle_result() -> void:
+	pending_battle_result.clear()
 
 
 func has_save_file() -> bool:
