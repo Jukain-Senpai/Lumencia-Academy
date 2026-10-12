@@ -92,7 +92,8 @@ func _test_real_death_then_victory_and_story_return() -> void:
 	_check(vn.current_dialogue_path == POSTBATTLE_PATH, "DEATH VICTORY: wrong postbattle sequence loaded")
 	_check(vn.current_node_id == "death_defy_01", "DEATH VICTORY: valid death-Defy reached fallback/wrong branch")
 	_check(game_state.get_bond("hiruko") == 0, "DEATH VICTORY: death reaction changed Hiruko Bond")
-	_check(game_state.get_pending_battle_result() == result, "DEATH VICTORY: reaction mutated the result")
+	_check(game_state.get_pending_battle_result().is_empty(), "DEATH VICTORY: committed result was not consumed")
+	_check(game_state.get_flag("m6_training_hall_defy_death_applied"), "DEATH VICTORY: death-Defy receipt was not persisted")
 	await _assert_death_reaction_and_shared_ending(vn, "DEATH VICTORY")
 	await _free_current_scene()
 
@@ -304,7 +305,8 @@ func _test_story_context_distinction_and_malformed_fallback() -> void:
 		_check(normal_vn.current_node_id == "defy_01", "STORY NORMAL DEFY: death branch stole replacement branch")
 		_check(normal_vn.dialogue_text.text == "You could've used me to clear the first Prescript.", "STORY NORMAL DEFY: retained dialogue changed")
 		_check(game_state.get_bond("hiruko") == 1, "STORY NORMAL DEFY: Bond +1 was not retained")
-		_check(game_state.get_pending_battle_result() == normal_result, "STORY NORMAL DEFY: result was mutated")
+		_check(game_state.get_pending_battle_result().is_empty(), "STORY NORMAL DEFY: committed result was not consumed")
+		_check(game_state.get_flag("m6_training_hall_defy_replacement_applied"), "STORY NORMAL DEFY: replacement receipt was not persisted")
 		await _free_current_scene()
 
 	var malformed := _result("VICTORY", "DEFY", _facts({}))

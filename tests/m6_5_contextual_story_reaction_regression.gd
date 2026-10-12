@@ -20,6 +20,7 @@ const REACTIONS := [
 		"route": "OBEY",
 		"condition_id": "check_direct_hit",
 		"required_fact": "jukain_attacked_hiruko",
+		"receipt": "m6_training_hall_obey_direct_hit_applied",
 		"start": "obey_01",
 		"delta": -1,
 		"lines": [
@@ -33,6 +34,7 @@ const REACTIONS := [
 		"route": "EXPLOIT",
 		"condition_id": "check_enemy_hit",
 		"required_fact": "hiruko_damaged_by_enemy",
+		"receipt": "m6_training_hall_exploit_enemy_hit_applied",
 		"start": "exploit_01",
 		"delta": -1,
 		"lines": [
@@ -46,6 +48,7 @@ const REACTIONS := [
 		"route": "DEFY",
 		"condition_id": "check_replacement",
 		"required_fact": "replacement_requirement_completed",
+		"receipt": "m6_training_hall_defy_replacement_applied",
 		"start": "defy_01",
 		"delta": 1,
 		"lines": [
@@ -60,6 +63,7 @@ const REACTIONS := [
 		"route": "DEFY",
 		"condition_id": "check_terminal_death",
 		"required_fact": "jukain_died_before_prescript_resolution",
+		"receipt": "m6_training_hall_defy_death_applied",
 		"start": "death_defy_01",
 		"line_prefix": "death_defy",
 		"delta": 0,
@@ -133,13 +137,19 @@ func _test_data_graph_and_narrow_schema() -> void:
 		var node: Dictionary = nodes_by_id.get(reaction["condition_id"], {})
 		_check(not node.is_empty(), "DATA: missing condition %s" % reaction["condition_id"])
 		var condition: Dictionary = node.get("condition", {})
-		_check(condition.keys().size() == 6, "DATA: condition %s has extra query fields" % reaction["condition_id"])
+		var expected_condition_size := 8 if reaction["condition_id"] == "check_terminal_death" else 7
+		_check(condition.keys().size() == expected_condition_size, "DATA: condition %s has extra query fields" % reaction["condition_id"])
 		_check(condition.get("type") == "battle_result_matches", "DATA: condition does not use the narrow result matcher")
 		_check(condition.get("outcome") == "VICTORY", "DATA: condition outcome is not Victory")
 		_check(condition.get("encounter_id") == ENCOUNTER_ID, "DATA: condition encounter identity changed")
 		_check(condition.get("prescript_id") == PRESCRIPT_ID, "DATA: condition Prescript identity changed")
 		_check(condition.get("prescript_route") == reaction["route"], "DATA: condition route is wrong")
 		_check(condition.get("required_fact") == reaction["required_fact"], "DATA: condition fact is wrong")
+		_check(condition.get("receipt_flag") == reaction["receipt"], "DATA: condition receipt is wrong")
+		if reaction["condition_id"] == "check_terminal_death":
+			_check(condition.get("required_false_fact") == "replacement_requirement_completed", "DATA: death-Defy overlap guard is wrong")
+		else:
+			_check(not condition.has("required_false_fact"), "DATA: non-death condition gained a false-fact query")
 		_check(node.get("true_target") == reaction["start"], "DATA: condition targets the wrong dialogue branch")
 		_check(node.get("false_target") == expected_false_targets[index], "DATA: condition chain order changed")
 		var effects: Array = node.get("effects", [])
@@ -188,7 +198,6 @@ func _test_valid_reactions_and_shared_reconvergence() -> void:
 		game_state.reset_state()
 		game_state.adjust_bond("hiruko", 4)
 		var result := _valid_result(reaction["route"], reaction["required_fact"])
-		var before: Dictionary = result.duplicate(true)
 		var scene: Variant = await _load_reaction_scene(result, false)
 		if scene == null:
 			continue
@@ -196,7 +205,9 @@ func _test_valid_reactions_and_shared_reconvergence() -> void:
 		_check(scene.current_node_id == reaction["start"], "%s: wrong reaction branch selected" % label)
 		_check(game_state.get_bond("hiruko") == 4 + int(reaction["delta"]), "%s: contextual Bond delta is wrong" % label)
 		_check(scene.executed_reaction_effect_node_ids.keys() == [reaction["condition_id"]], "%s: executed-node guard is wrong" % label)
-		_check(game_state.get_pending_battle_result() == before, "%s: branch entry mutated the combat result" % label)
+		_check(game_state.get_flag(reaction["receipt"]), "%s: persistent receipt was not set" % label)
+		_check(scene._active_training_hall_receipts() == [reaction["receipt"]], "%s: receipt cardinality is wrong" % label)
+		_check(game_state.get_pending_battle_result().is_empty(), "%s: committed combat result was not consumed" % label)
 		_check(game_state.get_pending_vn_sequence().is_empty(), "%s: successful VN initialization retained routing" % label)
 		var bond_after_entry: int = game_state.get_bond("hiruko")
 		scene._show_node(reaction["condition_id"])
@@ -216,7 +227,7 @@ func _test_valid_reactions_and_shared_reconvergence() -> void:
 			_check(game_state.get_bond("hiruko") == bond_after_entry, "%s: shared line %d duplicated Bond" % [label, index + 1])
 			scene._advance_dialogue()
 		_check(scene.scene_ended, "%s: shared ending did not terminate" % label)
-		_check(game_state.get_pending_battle_result() == before, "%s: completed dialogue mutated/consumed result" % label)
+		_check(game_state.get_pending_battle_result().is_empty(), "%s: completed dialogue restored a consumed result" % label)
 		await _free_current_scene()
 
 
@@ -229,13 +240,13 @@ func _test_multiple_facts_preserve_resolved_route() -> void:
 		result["facts"]["jukain_attacked_hiruko"] = true
 		result["facts"]["hiruko_damaged_by_enemy"] = true
 		result["facts"]["replacement_requirement_completed"] = true
-		var before: Dictionary = result.duplicate(true)
 		var scene: Variant = await _load_reaction_scene(result, false)
 		if scene == null:
 			continue
 		_check(scene.current_node_id == reaction["start"], "%s MULTI: unrelated true facts switched the resolved route" % reaction["route"])
 		_check(game_state.get_bond("hiruko") == int(reaction["delta"]), "%s MULTI: wrong contextual delta" % reaction["route"])
-		_check(game_state.get_pending_battle_result() == before, "%s MULTI: result was mutated" % reaction["route"])
+		_check(game_state.get_pending_battle_result().is_empty(), "%s MULTI: committed result was not consumed" % reaction["route"])
+		_check(game_state.get_flag(reaction["receipt"]), "%s MULTI: correct receipt was not set" % reaction["route"])
 		await _free_current_scene()
 
 
@@ -271,7 +282,6 @@ func _test_invalid_result_fallbacks() -> void:
 func _test_instance_local_duplicate_protection_and_save_boundary() -> void:
 	game_state.reset_state()
 	var result := _valid_result("OBEY", "jukain_attacked_hiruko")
-	var before: Dictionary = result.duplicate(true)
 	var scene: Variant = await _load_reaction_scene(result, false)
 	if scene == null:
 		return
@@ -279,7 +289,8 @@ func _test_instance_local_duplicate_protection_and_save_boundary() -> void:
 	for index: int in 4:
 		scene._show_node("check_direct_hit")
 		_check(game_state.get_bond("hiruko") == -1, "LOCAL GUARD: repeated traversal %d reapplied Bond" % [index + 1])
-	_check(game_state.get_pending_battle_result() == before, "LOCAL GUARD: traversal changed result")
+	_check(game_state.get_pending_battle_result().is_empty(), "LOCAL GUARD: consumed result reappeared")
+	_check(game_state.get_flag("m6_training_hall_obey_direct_hit_applied"), "LOCAL GUARD: Obey receipt was not durable")
 	_check(game_state.save_game(POSTBATTLE_PATH, "obey_01"), "SAVE: reaction line could not use existing save payload")
 	var file := FileAccess.open(TEST_SAVE_PATH, FileAccess.READ)
 	_check(file != null, "SAVE: reaction save payload could not be read")
@@ -289,6 +300,8 @@ func _test_instance_local_duplicate_protection_and_save_boundary() -> void:
 		if typeof(parsed) == TYPE_DICTIONARY:
 			var saved: Dictionary = parsed
 			_check(saved.keys().size() == 4, "SAVE: four-field schema changed")
+			_check(saved.get("flags", {}).get("m6_training_hall_obey_direct_hit_applied") == true, "SAVE: Obey receipt was not stored inside flags")
+			_check(saved.get("bonds", {}).get("hiruko") == -1, "SAVE: committed Bond was not stored")
 			for field: String in ["pending_battle_result", "pending_vn_sequence", "executed_reaction_effect_node_ids", "consumed", "bond_applied"]:
 				_check(not saved.has(field), "SAVE: M6 transient/apply-once field '%s' was serialized" % field)
 	await _free_current_scene()
@@ -296,8 +309,9 @@ func _test_instance_local_duplicate_protection_and_save_boundary() -> void:
 	_check(game_state.prepare_pending_vn_sequence(RETURN_SEQUENCE), "M6.6 BOUNDARY: second-instance handoff failed")
 	var second_scene: Variant = await _load_scene(VN_SCENE_PATH)
 	if second_scene != null:
-		_check(game_state.get_bond("hiruko") == -2, "M6.6 BOUNDARY: new instance did not exhibit documented reapplication limitation")
-		_check(game_state.get_pending_battle_result() == before, "M6.6 BOUNDARY: new instance changed result")
+		_check(second_scene.current_node_id == "obey_01", "M6.6: persisted receipt did not restore the Obey branch")
+		_check(game_state.get_bond("hiruko") == -1, "M6.6: new instance reapplied Bond")
+		_check(game_state.get_pending_battle_result().is_empty(), "M6.6: new instance invented a pending result")
 		await _free_current_scene()
 
 

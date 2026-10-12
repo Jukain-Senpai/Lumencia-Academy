@@ -24,6 +24,11 @@ const REACTION_TEXT := {
 	"DEFY": "You could've used me to clear the first Prescript.",
 }
 const REACTION_BOND := {"OBEY": -1, "EXPLOIT": -1, "DEFY": 1}
+const REACTION_RECEIPT := {
+	"OBEY": "m6_training_hall_obey_direct_hit_applied",
+	"EXPLOIT": "m6_training_hall_exploit_enemy_hit_applied",
+	"DEFY": "m6_training_hall_defy_replacement_applied",
+}
 
 var failures: Array[String] = []
 var checks := 0
@@ -385,7 +390,8 @@ func _assert_postbattle_arrival(before_return: Dictionary, label: String) -> voi
 	_check(vn.sequence_background.resource_path == BACKGROUND_PATH, "%s: Training Hall continuity was lost" % label)
 	_check(game_state.get_pending_vn_sequence().is_empty(), "%s: successful VN initialization retained routing handoff" % label)
 	_check(game_state.get_pending_battle_context().is_empty(), "%s: completed encounter context was not cleared" % label)
-	_check(game_state.get_pending_battle_result() == before_return, "%s: scene return mutated the result" % label)
+	_check(game_state.get_pending_battle_result().is_empty(), "%s: valid reaction did not consume the result" % label)
+	_check(game_state.get_flag(REACTION_RECEIPT.get(route, "")), "%s: valid reaction did not persist its receipt" % label)
 	_check(game_state.get_bond("hiruko") == REACTION_BOND.get(route, 0), "%s: M6.5 contextual Bond consequence is wrong" % label)
 	await _free_current_scene()
 

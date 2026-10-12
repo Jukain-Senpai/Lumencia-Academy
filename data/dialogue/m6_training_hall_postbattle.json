@@ -11,7 +11,8 @@
         "encounter_id": "m6_training_hall_prototype",
         "prescript_id": "prototype_hiruko_hp",
         "prescript_route": "OBEY",
-        "required_fact": "jukain_attacked_hiruko"
+        "required_fact": "jukain_attacked_hiruko",
+        "receipt_flag": "m6_training_hall_obey_direct_hit_applied"
       },
       "effects": [
         {
@@ -32,7 +33,8 @@
         "encounter_id": "m6_training_hall_prototype",
         "prescript_id": "prototype_hiruko_hp",
         "prescript_route": "EXPLOIT",
-        "required_fact": "hiruko_damaged_by_enemy"
+        "required_fact": "hiruko_damaged_by_enemy",
+        "receipt_flag": "m6_training_hall_exploit_enemy_hit_applied"
       },
       "effects": [
         {
@@ -53,7 +55,8 @@
         "encounter_id": "m6_training_hall_prototype",
         "prescript_id": "prototype_hiruko_hp",
         "prescript_route": "DEFY",
-        "required_fact": "replacement_requirement_completed"
+        "required_fact": "replacement_requirement_completed",
+        "receipt_flag": "m6_training_hall_defy_replacement_applied"
       },
       "effects": [
         {
@@ -74,7 +77,9 @@
         "encounter_id": "m6_training_hall_prototype",
         "prescript_id": "prototype_hiruko_hp",
         "prescript_route": "DEFY",
-        "required_fact": "jukain_died_before_prescript_resolution"
+        "required_fact": "jukain_died_before_prescript_resolution",
+        "required_false_fact": "replacement_requirement_completed",
+        "receipt_flag": "m6_training_hall_defy_death_applied"
       },
       "effects": [
         {

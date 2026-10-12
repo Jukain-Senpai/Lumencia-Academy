@@ -17,6 +17,13 @@ const BATTLE_REACTION_FACTS := [
 	"replacement_requirement_completed",
 	"jukain_died_before_prescript_resolution",
 ]
+const TRAINING_HALL_REACTION_RECEIPTS := [
+	"m6_training_hall_obey_direct_hit_applied",
+	"m6_training_hall_exploit_enemy_hit_applied",
+	"m6_training_hall_defy_replacement_applied",
+	"m6_training_hall_defy_death_applied",
+]
+const DEATH_DEFY_REQUIRED_FALSE_FACT := "replacement_requirement_completed"
 
 const CHARACTER_TEXTURES := {
 	"Jukain": {
@@ -406,6 +413,8 @@ func _validate_battle_result_condition(
 			"prescript_id",
 			"prescript_route",
 			"required_fact",
+			"required_false_fact",
+			"receipt_flag",
 		],
 		condition_context
 	):
@@ -422,6 +431,7 @@ func _validate_battle_result_condition(
 		"prescript_id",
 		"prescript_route",
 		"required_fact",
+		"receipt_flag",
 	]:
 		if _required_string(condition, field, condition_context).is_empty():
 			return false
@@ -439,6 +449,20 @@ func _validate_battle_result_condition(
 			"%s has unsupported authoritative fact '%s'."
 			% [condition_context, condition["required_fact"]]
 		)
+	if not TRAINING_HALL_REACTION_RECEIPTS.has(condition["receipt_flag"]):
+		return _report_dialogue_error(
+			"%s has unsupported reaction receipt '%s'."
+			% [condition_context, condition["receipt_flag"]]
+		)
+	if condition.has("required_false_fact"):
+		if (
+			condition["required_fact"] != "jukain_died_before_prescript_resolution"
+			or condition["required_false_fact"] != DEATH_DEFY_REQUIRED_FALSE_FACT
+		):
+			return _report_dialogue_error(
+				"%s only supports replacement completion as the death-Defy false fact."
+				% condition_context
+			)
 	if not _validate_effects(node, condition_context):
 		return false
 	var effects: Array = node.get("effects", [])
@@ -647,11 +671,7 @@ func _show_condition(node: Dictionary) -> void:
 		"flag_equals":
 			condition_matches = GameState.get_flag(condition["flag"]) == condition["value"]
 		"battle_result_matches":
-			condition_matches = _battle_result_matches(condition)
-			if condition_matches and not executed_reaction_effect_node_ids.has(node["id"]):
-				if not _apply_effects(node):
-					return
-				executed_reaction_effect_node_ids[node["id"]] = true
+			condition_matches = _resolve_battle_reaction_condition(node)
 		_:
 			_report_runtime_error("Unknown condition type '%s'." % condition["type"])
 			return
@@ -659,8 +679,51 @@ func _show_condition(node: Dictionary) -> void:
 	_show_node(target)
 
 
-func _battle_result_matches(condition: Dictionary) -> bool:
-	var result: Dictionary = GameState.get_pending_battle_result()
+func _resolve_battle_reaction_condition(node: Dictionary) -> bool:
+	var condition: Dictionary = node["condition"]
+	var receipt_flag: String = condition["receipt_flag"]
+	var active_receipts := _active_training_hall_receipts()
+	if active_receipts.size() > 1:
+		return false
+
+	var pending_result: Dictionary = GameState.get_pending_battle_result()
+	if active_receipts.size() == 1:
+		if active_receipts[0] != receipt_flag:
+			return false
+		if pending_result.is_empty():
+			return true
+		if not _battle_result_matches(condition, pending_result):
+			return false
+		GameState.clear_pending_battle_result()
+		return true
+
+	if not _battle_result_matches(condition, pending_result):
+		return false
+	if executed_reaction_effect_node_ids.has(node["id"]):
+		return false
+
+	# Re-read persistent state at the actual commit boundary. The receipt is the
+	# primary apply-once guard; the instance-local node set is secondary defense.
+	active_receipts = _active_training_hall_receipts()
+	if not active_receipts.is_empty() or GameState.get_flag(receipt_flag):
+		return false
+	if not _apply_effects(node):
+		return false
+	GameState.set_flag(receipt_flag, true)
+	GameState.clear_pending_battle_result()
+	executed_reaction_effect_node_ids[node["id"]] = true
+	return true
+
+
+func _active_training_hall_receipts() -> Array[String]:
+	var active_receipts: Array[String] = []
+	for receipt_flag: String in TRAINING_HALL_REACTION_RECEIPTS:
+		if GameState.get_flag(receipt_flag):
+			active_receipts.append(receipt_flag)
+	return active_receipts
+
+
+func _battle_result_matches(condition: Dictionary, result: Dictionary) -> bool:
 	if (
 		result.get("outcome") != condition["outcome"]
 		or result.get("encounter_id") != condition["encounter_id"]
@@ -673,7 +736,16 @@ func _battle_result_matches(condition: Dictionary) -> bool:
 		return false
 	var facts: Dictionary = raw_facts
 	var required_fact: String = condition["required_fact"]
-	return typeof(facts.get(required_fact)) == TYPE_BOOL and facts[required_fact] == true
+	if typeof(facts.get(required_fact)) != TYPE_BOOL or facts[required_fact] != true:
+		return false
+	if condition.has("required_false_fact"):
+		var required_false_fact: String = condition["required_false_fact"]
+		if (
+			typeof(facts.get(required_false_fact)) != TYPE_BOOL
+			or facts[required_false_fact] != false
+		):
+			return false
+	return true
 
 
 func _save_game() -> void:
