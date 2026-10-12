@@ -55,6 +55,25 @@ func has_active_context() -> bool:
 	return not active_context_id.is_empty()
 
 
+func get_active_context_definition() -> Dictionary:
+	if not has_active_context():
+		return {}
+	return _context_definitions[active_context_id].duplicate(true)
+
+
+func get_active_node_definitions() -> Array:
+	if not has_active_context():
+		return []
+	var context_definition: Dictionary = _context_definitions[active_context_id]
+	return context_definition["nodes"].duplicate(true)
+
+
+func get_node_definition(node_id: String) -> Dictionary:
+	if not has_node(node_id):
+		return {}
+	return _active_nodes[node_id].duplicate(true)
+
+
 func has_node(node_id: String) -> bool:
 	return has_active_context() and _active_nodes.has(node_id)
 
