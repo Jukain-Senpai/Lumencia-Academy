@@ -85,6 +85,7 @@ func _test_obey_victory_contract_and_copy_safety() -> void:
 		"jukain_attacked_hiruko": true,
 		"hiruko_damaged_by_enemy": false,
 		"replacement_requirement_completed": false,
+		"jukain_died_before_prescript_resolution": false,
 		"blessing_gained": 1,
 		"karma_gained": 0,
 	}
@@ -128,6 +129,7 @@ func _test_exploit_victory_contract() -> void:
 			"jukain_attacked_hiruko": false,
 			"hiruko_damaged_by_enemy": true,
 			"replacement_requirement_completed": false,
+			"jukain_died_before_prescript_resolution": false,
 			"blessing_gained": 0,
 			"karma_gained": 0,
 		},
@@ -163,6 +165,7 @@ func _test_defy_victory_contract() -> void:
 			"jukain_attacked_hiruko": false,
 			"hiruko_damaged_by_enemy": false,
 			"replacement_requirement_completed": true,
+			"jukain_died_before_prescript_resolution": false,
 			"blessing_gained": 0,
 			"karma_gained": 1,
 		},
@@ -195,6 +198,7 @@ func _test_defeat_contracts_and_event_independence() -> void:
 			"jukain_attacked_hiruko": true,
 			"hiruko_damaged_by_enemy": false,
 			"replacement_requirement_completed": false,
+			"jukain_died_before_prescript_resolution": false,
 			"blessing_gained": 1,
 			"karma_gained": 0,
 		},
@@ -406,7 +410,7 @@ func _assert_contract(
 	_check(contract.get("prescript_route") == route, "%s: wrong Prescript route" % label)
 	_check(not contract.has("return_sequence"), "%s: routing context leaked into result" % label)
 	var facts: Dictionary = contract.get("facts", {})
-	_check(facts.keys().size() == 5, "%s: facts do not have exactly five fields" % label)
+	_check(facts.keys().size() == 6, "%s: facts do not have exactly six fields" % label)
 	_check(facts == expected_facts, "%s: factual snapshot is wrong: %s" % [label, facts])
 
 
@@ -415,6 +419,7 @@ func _empty_facts() -> Dictionary:
 		"jukain_attacked_hiruko": false,
 		"hiruko_damaged_by_enemy": false,
 		"replacement_requirement_completed": false,
+		"jukain_died_before_prescript_resolution": false,
 		"blessing_gained": 0,
 		"karma_gained": 0,
 	}

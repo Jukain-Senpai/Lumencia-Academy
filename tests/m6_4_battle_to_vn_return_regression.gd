@@ -77,7 +77,7 @@ func _test_postbattle_data_and_resolver() -> void:
 	_check(data.get("background") == BACKGROUND_PATH, "DATA: post-battle sequence uses the wrong background")
 	_check(data.get("start") == "check_direct_hit", "DATA: post-battle sequence has the wrong start node")
 	var nodes: Array = data.get("nodes", [])
-	_check(nodes.size() == 21, "DATA: M6.5 changed the expected post-battle graph size")
+	_check(nodes.size() == 26, "DATA: M6.5.5 changed the expected post-battle graph size")
 	var visible_lines := 0
 	var end_nodes := 0
 	var result_conditions := 0
@@ -98,8 +98,8 @@ func _test_postbattle_data_and_resolver() -> void:
 				end_nodes += 1
 			_:
 				_check(false, "DATA: post-battle sequence contains an unsupported node type")
-	_check(visible_lines == 17 and end_nodes == 1, "DATA: M6.5 dialogue/end structure changed")
-	_check(result_conditions == 3 and bond_effects == 3, "DATA: contextual condition/effect count changed")
+	_check(visible_lines == 21 and end_nodes == 1, "DATA: M6.5.5 dialogue/end structure changed")
+	_check(result_conditions == 4 and bond_effects == 4, "DATA: contextual condition/effect count changed")
 	_check(not JSON.stringify(data).contains("[Prototype] Returned from battle."), "DATA: M6.4 placeholder remains visible")
 
 	var script: GDScript = load("res://scripts/vn/vn_prototype.gd")
@@ -138,6 +138,7 @@ func _test_real_obey_flow_result_order_and_return() -> void:
 		"jukain_attacked_hiruko": true,
 		"hiruko_damaged_by_enemy": false,
 		"replacement_requirement_completed": false,
+		"jukain_died_before_prescript_resolution": false,
 		"blessing_gained": 1,
 		"karma_gained": 0,
 	}, "OBEY FLOW")
@@ -165,6 +166,7 @@ func _test_exploit_return() -> void:
 		"jukain_attacked_hiruko": false,
 		"hiruko_damaged_by_enemy": true,
 		"replacement_requirement_completed": false,
+		"jukain_died_before_prescript_resolution": false,
 		"blessing_gained": 0,
 		"karma_gained": 0,
 	}, "EXPLOIT")
@@ -185,6 +187,7 @@ func _test_defy_return() -> void:
 		"jukain_attacked_hiruko": false,
 		"hiruko_damaged_by_enemy": false,
 		"replacement_requirement_completed": true,
+		"jukain_died_before_prescript_resolution": false,
 		"blessing_gained": 0,
 		"karma_gained": 1,
 	}, "DEFY")
@@ -456,6 +459,7 @@ func _empty_facts() -> Dictionary:
 		"jukain_attacked_hiruko": false,
 		"hiruko_damaged_by_enemy": false,
 		"replacement_requirement_completed": false,
+		"jukain_died_before_prescript_resolution": false,
 		"blessing_gained": 0,
 		"karma_gained": 0,
 	}

@@ -555,9 +555,7 @@ func execute_jukain_form_chain() -> bool:
 			form, hit_index, jukain_unit.line, target.line
 		)
 		var hp_before: int = target.current_hp
-		target.current_hp = maxi(0, target.current_hp - damage)
-		if target.current_hp == 0:
-			target.defeated = true
+		_apply_hp_loss(target, damage)
 		completed_hits += 1
 		var finisher_suffix := (
 			" [FINISHER]" if form == JukainReplicaForm.SCYTHE and hit_index == 3 else ""
@@ -809,6 +807,29 @@ func _process_jukain_turn_start() -> StringName:
 
 func _is_living(unit: BattleUnit) -> bool:
 	return not unit.defeated and unit.current_hp > 0
+
+
+func _apply_hp_loss(target: BattleUnit, resolved_damage: int) -> int:
+	if target == null:
+		return 0
+	var was_living := _is_living(target)
+	var hp_before := target.current_hp
+	target.current_hp = maxi(0, target.current_hp - maxi(0, resolved_damage))
+	if target.current_hp == 0:
+		target.defeated = true
+	_observe_defeat_transition(target, was_living)
+	return hp_before - target.current_hp
+
+
+func _observe_defeat_transition(target: BattleUnit, was_living: bool) -> void:
+	if not was_living or _is_living(target):
+		return
+	if (
+		target == jukain_unit
+		and jukain_prescript != null
+		and not jukain_prescript.is_resolved()
+	):
+		result_facts["jukain_died_before_prescript_resolution"] = true
 
 
 func _can_begin_jukain_form_chain() -> bool:
@@ -1130,9 +1151,7 @@ func _commit_basic_attack(
 
 	# HP is intentionally applied before raw Seal damage. The prepared result
 	# captured Hiruko's state at hit start for this hit's resistance calculation.
-	target.current_hp = maxi(0, target.current_hp - hp_damage)
-	if target.current_hp == 0:
-		target.defeated = true
+	_apply_hp_loss(target, hp_damage)
 
 	if not hiruko_hit.is_empty():
 		hiruko_hit = hiruko_state.apply_prepared_seal_damage(hiruko_hit)
@@ -1362,9 +1381,7 @@ func _resolve_hiruko_gut_stab(target: BattleUnit) -> void:
 
 
 func _apply_hiruko_skill_damage(target: BattleUnit, damage: int) -> void:
-	target.current_hp = maxi(0, target.current_hp - maxi(0, damage))
-	if target.current_hp == 0:
-		target.defeated = true
+	_apply_hp_loss(target, damage)
 
 
 func _advance_hiruko_toward_front() -> void:
@@ -1438,11 +1455,10 @@ func _process_burn_tick(unit: BattleUnit) -> bool:
 		_clear_burn(unit)
 		return false
 
-	unit.current_hp = maxi(0, unit.current_hp - BURN_DAMAGE)
+	_apply_hp_loss(unit, BURN_DAMAGE)
 	var ticks_after := ticks_before - 1
 	_append_combat_log("%s takes %d Burn damage." % [unit.display_name, BURN_DAMAGE])
 	if unit.current_hp == 0:
-		unit.defeated = true
 		_clear_burn(unit)
 		_append_combat_log("%s is defeated by Burn." % unit.display_name)
 	elif ticks_after == 0:
@@ -1564,6 +1580,7 @@ func _reset_battle_result_tracking() -> void:
 		"jukain_attacked_hiruko": false,
 		"hiruko_damaged_by_enemy": false,
 		"replacement_requirement_completed": false,
+		"jukain_died_before_prescript_resolution": false,
 		"blessing_gained": 0,
 		"karma_gained": 0,
 	}
@@ -1583,9 +1600,11 @@ func _commit_pending_battle_result(result: BattleResult) -> bool:
 			outcome = "DEFEAT"
 		_:
 			return false
-	var route: String = jukain_prescript.get_route_label() if jukain_prescript != null else "NONE"
-	if route == "NONE":
-		route = "UNRESOLVED"
+	var route := "UNRESOLVED"
+	if jukain_prescript != null and jukain_prescript.is_resolved():
+		route = jukain_prescript.get_route_label()
+	elif result_facts["jukain_died_before_prescript_resolution"]:
+		route = "DEFY"
 	GameState.set_pending_battle_result(
 		{
 			"outcome": outcome,

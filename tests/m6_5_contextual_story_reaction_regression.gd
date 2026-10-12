@@ -56,6 +56,20 @@ const REACTIONS := [
 			["Hiruko", "faint_smile", "...Idiot."],
 		],
 	},
+	{
+		"route": "DEFY",
+		"condition_id": "check_terminal_death",
+		"required_fact": "jukain_died_before_prescript_resolution",
+		"start": "death_defy_01",
+		"line_prefix": "death_defy",
+		"delta": 0,
+		"lines": [
+			["Hiruko", "annoyed", "You got yourself knocked out before dealing with that thing."],
+			["Jukain", "tired", "I was busy being unconscious."],
+			["Hiruko", "annoyed", "That's not an excuse."],
+			["Jukain", "smirk", "It was fairly convincing at the time."],
+		],
+	},
 ]
 
 var failures: Array[String] = []
@@ -111,9 +125,9 @@ func _test_data_graph_and_narrow_schema() -> void:
 		_check(typeof(raw_node) == TYPE_DICTIONARY, "DATA: dialogue node is not an object")
 		if typeof(raw_node) == TYPE_DICTIONARY:
 			nodes_by_id[raw_node.get("id", "")] = raw_node
-	_check(nodes_by_id.size() == 21, "DATA: expected post-battle graph size changed")
+	_check(nodes_by_id.size() == 26, "DATA: expected post-battle graph size changed")
 
-	var expected_false_targets := ["check_enemy_hit", "check_replacement", "reaction_fallback"]
+	var expected_false_targets := ["check_enemy_hit", "check_replacement", "check_terminal_death", "reaction_fallback"]
 	for index: int in REACTIONS.size():
 		var reaction: Dictionary = REACTIONS[index]
 		var node: Dictionary = nodes_by_id.get(reaction["condition_id"], {})
@@ -137,7 +151,10 @@ func _test_data_graph_and_narrow_schema() -> void:
 	for reaction: Dictionary in REACTIONS:
 		var lines: Array = reaction["lines"]
 		for index: int in lines.size():
-			var node_id := "%s_%02d" % [String(reaction["route"]).to_lower(), index + 1]
+			var line_prefix: String = reaction.get(
+				"line_prefix", String(reaction["route"]).to_lower()
+			)
+			var node_id := "%s_%02d" % [line_prefix, index + 1]
 			var node: Dictionary = nodes_by_id.get(node_id, {})
 			var expected: Array = lines[index]
 			_check(node.get("speaker") == expected[0], "DATA: %s speaker is wrong" % node_id)
@@ -152,6 +169,7 @@ func _test_data_graph_and_narrow_schema() -> void:
 	_check(nodes_by_id.get("obey_04", {}).get("next") == "shared_01", "DATA: Obey does not reconverge")
 	_check(nodes_by_id.get("exploit_04", {}).get("next") == "shared_01", "DATA: Exploit does not reconverge")
 	_check(nodes_by_id.get("defy_05", {}).get("next") == "shared_01", "DATA: Defy does not reconverge")
+	_check(nodes_by_id.get("death_defy_04", {}).get("next") == "shared_01", "DATA: terminal-death Defy does not reconverge")
 	_check(nodes_by_id.get("reaction_fallback", {}).get("text") == FALLBACK_TEXT, "DATA: neutral fallback content changed")
 	var serialized := JSON.stringify(data)
 	_check(not serialized.contains("[Prototype] Returned from battle."), "DATA: M6.4 placeholder remains")
@@ -161,7 +179,7 @@ func _test_data_graph_and_narrow_schema() -> void:
 	var scene: Variant = await _load_reaction_scene(_valid_result("OBEY", "jukain_attacked_hiruko"), false)
 	if scene != null:
 		_check(scene.dialogue_ready, "SCHEMA: existing VN loader rejected the contextual graph")
-		_check(scene.BATTLE_REACTION_FACTS == ["jukain_attacked_hiruko", "hiruko_damaged_by_enemy", "replacement_requirement_completed"], "SCHEMA: matcher supports fields beyond the approved authoritative facts")
+		_check(scene.BATTLE_REACTION_FACTS == ["jukain_attacked_hiruko", "hiruko_damaged_by_enemy", "replacement_requirement_completed", "jukain_died_before_prescript_resolution"], "SCHEMA: matcher supports fields beyond the approved authoritative facts")
 		await _free_current_scene()
 
 
@@ -204,6 +222,8 @@ func _test_valid_reactions_and_shared_reconvergence() -> void:
 
 func _test_multiple_facts_preserve_resolved_route() -> void:
 	for reaction: Dictionary in REACTIONS:
+		if reaction["condition_id"] == "check_terminal_death":
+			continue
 		game_state.reset_state()
 		var result := _valid_result(reaction["route"], reaction["required_fact"])
 		result["facts"]["jukain_attacked_hiruko"] = true
@@ -336,7 +356,7 @@ func _valid_result(route: String, required_fact: String) -> Dictionary:
 	var facts := _facts({required_fact: true})
 	if route == "OBEY":
 		facts["blessing_gained"] = 1
-	elif route == "DEFY":
+	elif route == "DEFY" and required_fact == "replacement_requirement_completed":
 		facts["karma_gained"] = 1
 	return _result("VICTORY", ENCOUNTER_ID, PRESCRIPT_ID, route, facts)
 
@@ -362,6 +382,7 @@ func _facts(overrides: Dictionary) -> Dictionary:
 		"jukain_attacked_hiruko": false,
 		"hiruko_damaged_by_enemy": false,
 		"replacement_requirement_completed": false,
+		"jukain_died_before_prescript_resolution": false,
 		"blessing_gained": 0,
 		"karma_gained": 0,
 	}

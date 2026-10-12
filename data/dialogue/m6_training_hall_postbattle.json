@@ -63,6 +63,27 @@
         }
       ],
       "true_target": "defy_01",
+      "false_target": "check_terminal_death"
+    },
+    {
+      "id": "check_terminal_death",
+      "type": "condition",
+      "condition": {
+        "type": "battle_result_matches",
+        "outcome": "VICTORY",
+        "encounter_id": "m6_training_hall_prototype",
+        "prescript_id": "prototype_hiruko_hp",
+        "prescript_route": "DEFY",
+        "required_fact": "jukain_died_before_prescript_resolution"
+      },
+      "effects": [
+        {
+          "type": "adjust_bond",
+          "bond": "hiruko",
+          "amount": 0
+        }
+      ],
+      "true_target": "death_defy_01",
       "false_target": "reaction_fallback"
     },
     {
@@ -167,6 +188,38 @@
       "speaker": "Hiruko",
       "expression": "faint_smile",
       "text": "...Idiot.",
+      "next": "shared_01"
+    },
+    {
+      "id": "death_defy_01",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "You got yourself knocked out before dealing with that thing.",
+      "next": "death_defy_02"
+    },
+    {
+      "id": "death_defy_02",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "I was busy being unconscious.",
+      "next": "death_defy_03"
+    },
+    {
+      "id": "death_defy_03",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "annoyed",
+      "text": "That's not an excuse.",
+      "next": "death_defy_04"
+    },
+    {
+      "id": "death_defy_04",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "smirk",
+      "text": "It was fairly convincing at the time.",
       "next": "shared_01"
     },
     {

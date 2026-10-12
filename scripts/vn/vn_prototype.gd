@@ -15,6 +15,7 @@ const BATTLE_REACTION_FACTS := [
 	"jukain_attacked_hiruko",
 	"hiruko_damaged_by_enemy",
 	"replacement_requirement_completed",
+	"jukain_died_before_prescript_resolution",
 ]
 
 const CHARACTER_TEXTURES := {
