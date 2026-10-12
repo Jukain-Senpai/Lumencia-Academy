@@ -1,6 +1,7 @@
 extends Node
 
 const SAVE_PATH := "user://lumencia_save.json"
+const ExplorationStateModel := preload("res://scripts/systems/exploration_state.gd")
 
 var flags: Dictionary = {}
 var bonds: Dictionary = {}
@@ -8,6 +9,7 @@ var pending_battle_context: Dictionary = {}
 var pending_battle_result: Dictionary = {}
 var pending_vn_sequence := ""
 var persistence_error := ""
+var exploration_state := ExplorationStateModel.new()
 
 
 func set_flag(flag_name: String, value: bool) -> void:
@@ -38,6 +40,7 @@ func reset_state() -> void:
 	pending_battle_context.clear()
 	pending_battle_result.clear()
 	pending_vn_sequence = ""
+	exploration_state.clear_runtime()
 
 
 func prepare_battle_context(encounter_id: String, return_sequence: String) -> bool:
