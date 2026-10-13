@@ -358,6 +358,10 @@ func _instantiate_scene(automatic_enemies: bool) -> Control:
 
 
 func _new_scene(automatic_enemies: bool) -> Control:
+	# Each M4.3 case is an independent combat fixture. Victory now persists party HP
+	# globally, so reset that authoritative runtime before constructing the next case.
+	var game_state: Node = root.get_node("GameState")
+	game_state.party_runtime_state.reset()
 	var scene := _instantiate_scene(automatic_enemies)
 	if scene == null:
 		return null

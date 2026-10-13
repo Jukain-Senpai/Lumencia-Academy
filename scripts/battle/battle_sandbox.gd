@@ -7,6 +7,7 @@ const HirukoCombatStateModel := preload("res://scripts/battle/hiruko_combat_stat
 const JukainCombatStateModel := preload("res://scripts/battle/jukain_combat_state.gd")
 const JukainPrescriptStateModel := preload("res://scripts/battle/jukain_prescript_state.gd")
 const VNPrototypeModel := preload("res://scripts/vn/vn_prototype.gd")
+const ItemCatalogModel := preload("res://scripts/systems/item_catalog.gd")
 const VN_SCENE_PATH := "res://scenes/vn/vn_prototype.tscn"
 const EXPLORATION_MAP_SCENE_PATH := "res://scenes/exploration/exploration_map.tscn"
 const UNIT_CARD_HEIGHT := 44.0
@@ -69,6 +70,7 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var form_chain_button: Button = %FormChainButton
 @onready var skill_button: Button = %SkillButton
 @onready var move_button: Button = %MoveButton
+@onready var item_button: Button = %ItemButton
 @onready var cancel_button: Button = %CancelButton
 @onready var confirm_ally_attack_button: Button = %ConfirmAllyAttackButton
 @onready var scythe_form_button: Button = %ScytheFormButton
@@ -79,6 +81,8 @@ const ENEMY_FIXTURES: Array[Dictionary] = [
 @onready var kick_skill_button: Button = %KickSkillButton
 @onready var gut_stab_skill_button: Button = %GutStabSkillButton
 @onready var skill_back_button: Button = %SkillBackButton
+@onready var healing_herb_button: Button = %HealingHerbButton
+@onready var item_back_button: Button = %ItemBackButton
 @onready var move_front_button: Button = %MoveFrontButton
 @onready var move_mid_button: Button = %MoveMidButton
 @onready var move_back_button: Button = %MoveBackButton
@@ -113,6 +117,9 @@ var valid_move_destinations: Array[int] = []
 var selecting_skill := false
 var selected_hiruko_skill: HirukoSkill = HirukoSkill.NONE
 var valid_skill_targets: Array[BattleUnit] = []
+var selecting_item := false
+var selected_item_id := ""
+var valid_item_targets: Array[BattleUnit] = []
 var action_in_progress := false
 var battle_result: BattleResult = BattleResult.NONE
 var automatic_enemy_turns_enabled := true
@@ -129,6 +136,8 @@ var result_facts: Dictionary = {}
 var battle_result_committed := false
 var battle_return_committed := false
 var last_battle_return_error := ""
+var battle_entry_hp_snapshot: Dictionary = {}
+var party_runtime_synced := false
 var vn_return_scene_path := VN_SCENE_PATH
 var selected_inspector_unit_id: StringName = HIRUKO_UNIT_ID
 var ally_attack_confirmation_target_id: StringName = &""
@@ -147,6 +156,7 @@ func _ready() -> void:
 	form_chain_button.pressed.connect(begin_jukain_form_chain)
 	skill_button.pressed.connect(begin_skill_selection)
 	move_button.pressed.connect(begin_move_selection)
+	item_button.pressed.connect(begin_item_selection)
 	cancel_button.pressed.connect(cancel_action_selection)
 	confirm_ally_attack_button.pressed.connect(confirm_ally_attack)
 	var form_buttons := _replica_form_buttons()
@@ -160,6 +170,8 @@ func _ready() -> void:
 	kick_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.KICK))
 	gut_stab_skill_button.pressed.connect(select_hiruko_skill.bind(HirukoSkill.GUT_STAB))
 	skill_back_button.pressed.connect(back_from_skill_menu)
+	healing_herb_button.pressed.connect(select_battle_item.bind(ItemCatalogModel.HEALING_HERB_ID))
+	item_back_button.pressed.connect(back_from_item_menu)
 	move_front_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.FRONT))
 	move_mid_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.MID))
 	move_back_button.pressed.connect(select_move_destination.bind(BattleUnitModel.Line.BACK))
@@ -168,6 +180,11 @@ func _ready() -> void:
 	reset_hiruko_button.pressed.connect(debug_reset_hiruko)
 	unlock_jukain_button.pressed.connect(debug_unlock_jukain)
 	reset_jukain_button.pressed.connect(debug_reset_jukain)
+	if not GameState.party_runtime_state.validate_battle_fixtures(PARTY_FIXTURES):
+		status_label.text = "Party runtime does not match the battle fixture."
+		push_error("Battle party runtime validation failed.")
+		return
+	battle_entry_hp_snapshot = GameState.party_runtime_state.get_hp_snapshot()
 	restart_battle()
 	_refresh_replica_shortcut_prompts()
 
@@ -214,6 +231,9 @@ func restart_battle() -> void:
 
 	party_units.assign(rebuilt_party)
 	enemy_units.assign(rebuilt_enemies)
+	if not _hydrate_party_units_from_snapshot(battle_entry_hp_snapshot):
+		status_label.text = "Party HP snapshot error — check the debugger."
+		return
 	hiruko_unit = _find_unit_by_id(HIRUKO_UNIT_ID)
 	hiruko_state = HirukoCombatStateModel.new()
 	jukain_unit = _find_unit_by_id(JUKAIN_UNIT_ID)
@@ -236,6 +256,7 @@ func restart_battle() -> void:
 	form_chain_button.release_focus()
 	skill_button.release_focus()
 	move_button.release_focus()
+	item_button.release_focus()
 	cancel_button.release_focus()
 	confirm_ally_attack_button.release_focus()
 	scythe_form_button.release_focus()
@@ -246,6 +267,8 @@ func restart_battle() -> void:
 	kick_skill_button.release_focus()
 	gut_stab_skill_button.release_focus()
 	skill_back_button.release_focus()
+	healing_herb_button.release_focus()
+	item_back_button.release_focus()
 	move_front_button.release_focus()
 	move_mid_button.release_focus()
 	move_back_button.release_focus()
@@ -329,6 +352,7 @@ func advance_turn() -> void:
 func begin_attack_selection() -> bool:
 	if (
 		action_in_progress
+		or _is_item_selection_active()
 		or _is_jukain_chain_selection_active()
 		or selecting_skill
 		or selected_hiruko_skill != HirukoSkill.NONE
@@ -368,6 +392,8 @@ func cancel_target_selection() -> bool:
 func cancel_action_selection() -> bool:
 	if action_in_progress:
 		return false
+	if _is_item_selection_active():
+		return back_from_item_menu()
 	if _is_jukain_chain_selection_active():
 		_clear_jukain_chain_selection()
 		_render_battlefield()
@@ -400,6 +426,7 @@ func cancel_action_selection() -> bool:
 func begin_move_selection() -> bool:
 	if (
 		action_in_progress
+		or _is_item_selection_active()
 		or _is_jukain_chain_selection_active()
 		or selecting_skill
 		or selected_hiruko_skill != HirukoSkill.NONE
@@ -420,6 +447,7 @@ func begin_move_selection() -> bool:
 func begin_skill_selection() -> bool:
 	if (
 		action_in_progress
+		or _is_item_selection_active()
 		or _is_jukain_chain_selection_active()
 		or battle_result != BattleResult.NONE
 		or current_unit != hiruko_unit
@@ -436,6 +464,8 @@ func begin_skill_selection() -> bool:
 
 
 func begin_jukain_form_chain() -> bool:
+	if _is_item_selection_active():
+		return false
 	if not _can_begin_jukain_form_chain():
 		return false
 	var targets := _get_valid_jukain_chain_targets()
@@ -609,6 +639,110 @@ func back_from_skill_menu() -> bool:
 	return true
 
 
+func begin_item_selection() -> bool:
+	if (
+		action_in_progress
+		or _is_jukain_chain_selection_active()
+		or selecting_target
+		or selecting_move
+		or selecting_skill
+		or selected_hiruko_skill != HirukoSkill.NONE
+		or _is_item_selection_active()
+		or battle_result != BattleResult.NONE
+		or current_unit == null
+		or current_unit.team != BattleUnitModel.Team.PARTY
+		or not _is_living(current_unit)
+	):
+		return false
+	selecting_item = true
+	selected_item_id = ""
+	valid_item_targets.clear()
+	_refresh_action_ui()
+	return true
+
+
+func select_battle_item(item_id: String) -> bool:
+	if (
+		action_in_progress
+		or not selecting_item
+		or current_unit == null
+		or current_unit.team != BattleUnitModel.Team.PARTY
+		or not GameState.inventory_state.can_use_in_context(
+			item_id,
+			ItemCatalogModel.BATTLE_ONLY
+		)
+	):
+		return false
+	var targets: Array[BattleUnit] = []
+	for unit: BattleUnit in party_units:
+		if _is_living(unit):
+			targets.append(unit)
+	if targets.is_empty():
+		return false
+	selecting_item = false
+	selected_item_id = item_id
+	valid_item_targets = targets
+	_render_battlefield()
+	_refresh_action_ui()
+	return true
+
+
+func back_from_item_menu() -> bool:
+	if action_in_progress or not _is_item_selection_active():
+		return false
+	if not selected_item_id.is_empty():
+		selected_item_id = ""
+		valid_item_targets.clear()
+		selecting_item = true
+	else:
+		selecting_item = false
+	_render_battlefield()
+	_refresh_action_ui()
+	return true
+
+
+func use_battle_item_on_target(target_id: StringName) -> bool:
+	if (
+		action_in_progress
+		or selected_item_id.is_empty()
+		or current_unit == null
+		or current_unit.team != BattleUnitModel.Team.PARTY
+	):
+		return false
+	var target := _find_unit_by_id(target_id)
+	if (
+		target == null
+		or target.team != BattleUnitModel.Team.PARTY
+		or not _is_living(target)
+		or not _contains_unit(valid_item_targets, target)
+		or not GameState.inventory_state.can_use_in_context(
+			selected_item_id,
+			ItemCatalogModel.BATTLE_ONLY
+		)
+	):
+		return false
+	var definition: Dictionary = GameState.inventory_state.get_item_definition(selected_item_id)
+	var effect: Dictionary = definition.get("effect", {})
+	if effect.get("type") != "heal" or typeof(effect.get("amount")) != TYPE_INT:
+		return false
+	if not GameState.inventory_state.consume_item(selected_item_id, 1):
+		return false
+	var actor: BattleUnit = current_unit
+	var hp_before := target.current_hp
+	target.current_hp = mini(target.max_hp, target.current_hp + int(effect["amount"]))
+	action_in_progress = true
+	_append_combat_log(
+		"%s uses %s on %s: %d → %d HP."
+		% [actor.display_name, definition["display_name"], target.display_name, hp_before, target.current_hp]
+	)
+	selected_item_id = ""
+	valid_item_targets.clear()
+	selecting_item = false
+	_render_battlefield()
+	_finish_completed_action(actor)
+	return true
+
+
 func select_hiruko_skill(skill: HirukoSkill) -> bool:
 	if (
 		action_in_progress
@@ -686,6 +820,7 @@ func select_hiruko_skill_target(target_id: StringName) -> bool:
 func resolve_enemy_turn() -> bool:
 	if (
 		action_in_progress
+		or _is_item_selection_active()
 		or _is_jukain_chain_selection_active()
 		or selecting_target
 		or selecting_move
@@ -843,6 +978,7 @@ func _can_begin_jukain_form_chain() -> bool:
 		and not selecting_target
 		and not selecting_move
 		and not selecting_skill
+		and not _is_item_selection_active()
 		and selected_hiruko_skill == HirukoSkill.NONE
 		and ally_attack_confirmation_target_id == &""
 		and not _is_jukain_chain_selection_active()
@@ -862,6 +998,7 @@ func _can_accept_jukain_replica_shortcut() -> bool:
 		and not selecting_target
 		and not selecting_move
 		and not selecting_skill
+		and not _is_item_selection_active()
 		and selected_hiruko_skill == HirukoSkill.NONE
 		and ally_attack_confirmation_target_id == &""
 	)
@@ -1552,6 +1689,8 @@ func _end_battle(result: BattleResult) -> void:
 	if battle_result != BattleResult.NONE:
 		return
 	battle_result = result
+	if result == BattleResult.VICTORY and not _sync_party_runtime_on_victory():
+		push_error("Victory could not synchronize party HP to PartyRuntimeState.")
 	_commit_pending_battle_result(result)
 	battle_generation += 1
 	enemy_action_pending = false
@@ -1589,6 +1728,7 @@ func _reset_battle_result_tracking() -> void:
 	}
 	battle_result_committed = false
 	battle_return_committed = false
+	party_runtime_synced = false
 	last_battle_return_error = ""
 
 
@@ -1752,6 +1892,10 @@ func _is_jukain_chain_selection_active() -> bool:
 	return selecting_jukain_chain_target or jukain_chain_target_id != &""
 
 
+func _is_item_selection_active() -> bool:
+	return selecting_item or not selected_item_id.is_empty()
+
+
 func _clear_action_selection() -> void:
 	_clear_target_selection()
 	_clear_jukain_chain_selection()
@@ -1760,6 +1904,9 @@ func _clear_action_selection() -> void:
 	selecting_skill = false
 	selected_hiruko_skill = HirukoSkill.NONE
 	valid_skill_targets.clear()
+	selecting_item = false
+	selected_item_id = ""
+	valid_item_targets.clear()
 
 
 func _append_combat_log(message: String) -> void:
@@ -1784,6 +1931,7 @@ func _refresh_action_ui() -> void:
 	form_chain_button.hide()
 	skill_button.hide()
 	move_button.hide()
+	item_button.hide()
 	cancel_button.hide()
 	confirm_ally_attack_button.hide()
 	chain_slots_label.hide()
@@ -1798,6 +1946,8 @@ func _refresh_action_ui() -> void:
 	kick_skill_button.hide()
 	gut_stab_skill_button.hide()
 	skill_back_button.hide()
+	healing_herb_button.hide()
+	item_back_button.hide()
 	move_front_button.hide()
 	move_mid_button.hide()
 	move_back_button.hide()
@@ -1810,6 +1960,22 @@ func _refresh_action_ui() -> void:
 	elif current_unit == null:
 		action_mode_label.text = "No current actor"
 		status_label.text = "Turn engine paused."
+	elif not selected_item_id.is_empty():
+		action_mode_label.text = "Item — Select Target"
+		item_back_button.show()
+		status_label.text = "Choose a living party member or go Back."
+	elif selecting_item:
+		action_mode_label.text = "Choose Item"
+		healing_herb_button.text = "Healing Herb ×%d" % GameState.inventory_state.get_quantity(
+			ItemCatalogModel.HEALING_HERB_ID
+		)
+		healing_herb_button.disabled = not GameState.inventory_state.can_use_in_context(
+			ItemCatalogModel.HEALING_HERB_ID,
+			ItemCatalogModel.BATTLE_ONLY
+		)
+		healing_herb_button.show()
+		item_back_button.show()
+		status_label.text = "Choose a usable item or go Back."
 	elif selecting_jukain_chain_target:
 		action_mode_label.text = "Form Chain — Select Target"
 		cancel_button.show()
@@ -1861,6 +2027,7 @@ func _refresh_action_ui() -> void:
 	elif current_unit.team == BattleUnitModel.Team.PARTY:
 		action_mode_label.text = "Choose action"
 		attack_button.show()
+		item_button.show()
 		if current_unit == hiruko_unit:
 			skill_button.show()
 		elif (
@@ -1870,13 +2037,13 @@ func _refresh_action_ui() -> void:
 			form_chain_button.show()
 		move_button.show()
 		status_label.text = (
-			"Hiruko's turn — Attack, Skill, or Move."
+			"Hiruko's turn — Attack, Skill, Item, or Move."
 			if current_unit == hiruko_unit
 			else (
-				"Jukain's turn — Attack, Form Chain, or Move."
+				"Jukain's turn — Attack, Form Chain, Item, or Move."
 				if current_unit == jukain_unit
 				and jukain_state.get_state() == JukainCombatStateModel.State.UNLOCKED
-				else "Party turn — Attack or move."
+				else "Party turn — Attack, Item, or Move."
 			)
 		)
 	else:
@@ -1962,6 +2129,41 @@ func _hiruko_skill_label(skill: HirukoSkill) -> String:
 	return "Skill"
 
 
+func _hydrate_party_units_from_snapshot(snapshot: Dictionary) -> bool:
+	if snapshot.size() != party_units.size():
+		return false
+	for unit: BattleUnit in party_units:
+		var raw_hp: Variant = snapshot.get(String(unit.stable_id))
+		if typeof(raw_hp) != TYPE_DICTIONARY:
+			return false
+		var hp: Dictionary = raw_hp
+		if (
+			hp.get("max_hp") != unit.max_hp
+			or typeof(hp.get("current_hp")) != TYPE_INT
+			or int(hp["current_hp"]) < 0
+			or int(hp["current_hp"]) > unit.max_hp
+		):
+			return false
+		unit.current_hp = hp["current_hp"]
+		unit.defeated = unit.current_hp == 0
+	return true
+
+
+func _sync_party_runtime_on_victory() -> bool:
+	if party_runtime_synced:
+		return true
+	var snapshot: Dictionary = {}
+	for unit: BattleUnit in party_units:
+		snapshot[String(unit.stable_id)] = {
+			"current_hp": unit.current_hp,
+			"max_hp": unit.max_hp,
+		}
+	if not GameState.party_runtime_state.apply_hp_snapshot(snapshot):
+		return false
+	party_runtime_synced = true
+	return true
+
+
 func _build_units(fixtures: Array[Dictionary], expected_team: BattleUnit.Team) -> Array[BattleUnit]:
 	var result: Array[BattleUnit] = []
 	var ids: Dictionary = {}
@@ -2017,6 +2219,7 @@ func select_inspector_unit(unit_id: StringName) -> bool:
 		or selecting_target
 		or selecting_move
 		or selecting_skill
+		or _is_item_selection_active()
 		or selected_hiruko_skill != HirukoSkill.NONE
 		or ally_attack_confirmation_target_id != &""
 	):
@@ -2330,7 +2533,9 @@ func _on_unit_card_input(event: InputEvent, unit_id: StringName) -> void:
 		and event.pressed
 	):
 		get_viewport().set_input_as_handled()
-		if selected_hiruko_skill != HirukoSkill.NONE:
+		if not selected_item_id.is_empty():
+			use_battle_item_on_target(unit_id)
+		elif selected_hiruko_skill != HirukoSkill.NONE:
 			select_hiruko_skill_target(unit_id)
 		elif selecting_jukain_chain_target:
 			select_jukain_chain_target(unit_id)
@@ -2341,6 +2546,8 @@ func _on_unit_card_input(event: InputEvent, unit_id: StringName) -> void:
 
 
 func _is_current_target_choice(unit: BattleUnit) -> bool:
+	if not selected_item_id.is_empty():
+		return _contains_unit(valid_item_targets, unit)
 	if selecting_jukain_chain_target:
 		return _contains_unit(valid_jukain_chain_targets, unit)
 	if selecting_target:

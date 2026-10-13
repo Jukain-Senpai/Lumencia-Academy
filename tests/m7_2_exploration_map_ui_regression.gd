@@ -244,10 +244,16 @@ func _test_invalid_context_handling() -> void:
 
 func _only_expected_map_buttons_exist() -> bool:
 	var all_buttons: Array[Node] = prototype_scene.find_children("*", "Button", true, false)
-	if all_buttons.size() != map_controller.marker_buttons.size() + 1:
+	var expected_utility_buttons := [
+		map_controller.get_node("PrimaryActionPanel/Margin/Content/PrimaryActionButton"),
+		map_controller.get_node("HeaderPanel/Margin/Header/InventoryButton"),
+		map_controller.get_node("InventoryPanel/Margin/Content/HealingHerbButton"),
+		map_controller.get_node("InventoryPanel/Margin/Content/InventoryBackButton"),
+	]
+	if all_buttons.size() != map_controller.marker_buttons.size() + expected_utility_buttons.size():
 		return false
 	for node: Node in all_buttons:
-		if node == map_controller.get_node("PrimaryActionPanel/Margin/Content/PrimaryActionButton"):
+		if node in expected_utility_buttons:
 			continue
 		if not node.has_meta("node_id") or not MARKER_IDS.has(node.get_meta("node_id")):
 			return false

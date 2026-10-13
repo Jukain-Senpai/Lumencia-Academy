@@ -493,6 +493,13 @@ focus_mode = 0
 theme_override_styles/normal = SubResource("Style_restart")
 text = "Move"
 
+[node name="ItemButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Item"
+
 [node name="CancelButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -558,6 +565,20 @@ theme_override_styles/normal = SubResource("Style_restart")
 text = "Gut Stab"
 
 [node name="SkillBackButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Back"
+
+[node name="HealingHerbButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("Style_restart")
+text = "Healing Herb ×0"
+
+[node name="ItemBackButton" type="Button" parent="Margin/Layout/TurnDebugPanel/Layout/TurnStatus/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0

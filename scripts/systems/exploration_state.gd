@@ -6,6 +6,7 @@ var current_node_id := ""
 var revealed_nodes: Dictionary = {}
 var completed_nodes: Dictionary = {}
 var roadblocked_nodes: Dictionary = {}
+var leftover_rewards: Dictionary = {}
 
 var _context_definitions: Dictionary = {}
 var _active_nodes: Dictionary = {}
@@ -48,6 +49,7 @@ func clear_runtime() -> void:
 	revealed_nodes.clear()
 	completed_nodes.clear()
 	roadblocked_nodes.clear()
+	leftover_rewards.clear()
 	_active_nodes.clear()
 
 
@@ -134,6 +136,40 @@ func set_node_roadblocked(node_id: String, roadblocked: bool) -> bool:
 		roadblocked_nodes[node_id] = true
 	else:
 		roadblocked_nodes.erase(node_id)
+	return true
+
+
+func set_leftover_reward(node_id: String, item_id: String, quantity: int) -> bool:
+	if not has_node(node_id) or item_id.is_empty() or quantity <= 0:
+		return false
+	leftover_rewards[node_id] = {
+		"item_id": item_id,
+		"quantity": quantity,
+	}
+	return true
+
+
+func has_leftover_reward(node_id: String) -> bool:
+	return has_node(node_id) and leftover_rewards.has(node_id)
+
+
+func get_leftover_reward(node_id: String) -> Dictionary:
+	if not has_leftover_reward(node_id):
+		return {}
+	return leftover_rewards[node_id].duplicate(true)
+
+
+func reduce_leftover_reward(node_id: String, quantity: int) -> bool:
+	if quantity <= 0 or not has_leftover_reward(node_id):
+		return false
+	var current: int = leftover_rewards[node_id]["quantity"]
+	if quantity > current:
+		return false
+	var remaining := current - quantity
+	if remaining == 0:
+		leftover_rewards.erase(node_id)
+	else:
+		leftover_rewards[node_id]["quantity"] = remaining
 	return true
 
 

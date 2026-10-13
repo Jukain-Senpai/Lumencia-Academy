@@ -2,6 +2,9 @@ extends Node
 
 const SAVE_PATH := "user://lumencia_save.json"
 const ExplorationStateModel := preload("res://scripts/systems/exploration_state.gd")
+const InventoryStateModel := preload("res://scripts/systems/inventory_state.gd")
+const PartyRuntimeStateModel := preload("res://scripts/systems/party_runtime_state.gd")
+const ItemCatalogModel := preload("res://scripts/systems/item_catalog.gd")
 const EXPLORATION_CONTENT_TYPES := ["vn_event", "battle", "resource"]
 
 var flags: Dictionary = {}
@@ -12,6 +15,8 @@ var pending_vn_sequence := ""
 var pending_exploration_content: Dictionary = {}
 var persistence_error := ""
 var exploration_state := ExplorationStateModel.new()
+var inventory_state := InventoryStateModel.new()
+var party_runtime_state := PartyRuntimeStateModel.new()
 
 
 func set_flag(flag_name: String, value: bool) -> void:
@@ -44,6 +49,31 @@ func reset_state() -> void:
 	pending_vn_sequence = ""
 	pending_exploration_content.clear()
 	exploration_state.clear_runtime()
+	inventory_state.clear()
+	party_runtime_state.reset()
+
+
+func use_item_in_exploration(item_id: String, member_id: String) -> Dictionary:
+	var result := {
+		"success": false,
+		"healed": 0,
+		"current_hp": 0,
+		"max_hp": 0,
+	}
+	if not inventory_state.can_use_in_context(item_id, ItemCatalogModel.EXPLORATION_ONLY):
+		return result
+	var definition: Dictionary = inventory_state.get_item_definition(item_id)
+	var effect: Dictionary = definition.get("effect", {})
+	var member: Dictionary = party_runtime_state.get_member(member_id)
+	if effect.get("type") != "heal" or member.is_empty() or member["current_hp"] <= 0:
+		return result
+	if not inventory_state.consume_item(item_id, 1):
+		return result
+	var heal_result: Dictionary = party_runtime_state.heal_member(member_id, effect["amount"])
+	if not heal_result["success"]:
+		inventory_state.gain_item(item_id, 1)
+		return result
+	return heal_result
 
 
 func prepare_battle_context(encounter_id: String, return_sequence: String) -> bool:

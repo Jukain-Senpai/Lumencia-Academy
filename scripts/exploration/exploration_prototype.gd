@@ -55,6 +55,11 @@ const PROTOTYPE_CONTEXT := {
 			"primary_content": {
 				"type": "resource",
 				"id": "m7_3_ruins_resource",
+				"reward": {
+					"type": "item",
+					"item_id": "healing_herb",
+					"quantity": 2,
+				},
 			},
 		},
 		{

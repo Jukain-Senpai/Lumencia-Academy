@@ -84,7 +84,7 @@ func _test_data_and_scope() -> void:
 			_check(nodes.size() == 4, "DATA: Riverside VN is not the locked three-line event")
 			_check(nodes[3].get("type") == "return_to_exploration", "DATA: VN lacks explicit Exploration return")
 			_check(nodes[3].get("content_id") == "m7_3_riverside_event", "DATA: VN return targets wrong content")
-	_check(not _object_has_property(game_state, "inventory"), "SCOPE: Inventory state was introduced early")
+	_check(_object_has_property(game_state, "inventory_state"), "SCOPE: M7.4 shared InventoryState is missing")
 	_check(not _object_has_property(game_state, "time"), "SCOPE: time state was introduced early")
 
 
@@ -225,14 +225,14 @@ func _test_resource_loop() -> void:
 	await process_frame
 	_check(state.is_node_completed("ruins_approach"), "RESOURCE: explicit interaction did not complete node")
 	_check(map.primary_action_panel.visible, "RESOURCE: success feedback panel is missing")
-	_check(map.primary_action_status.text == "Resource collected.", "RESOURCE: success feedback changed")
+	_check(map.primary_action_status.text == "Healing Herb ×2 collected.", "RESOURCE: success feedback changed")
 	_check(not map.primary_action_button.visible, "RESOURCE: completed resource remains actionable")
 	_check(map.get_marker_button("ruins_approach").get_instance_id() == marker_before, "RESOURCE: refresh rebuilt stable marker")
 	var completed_before: Dictionary = state.completed_nodes.duplicate(true)
 	_check(not map.interact_with_current_node(), "RESOURCE: second collection was accepted")
 	_check(state.completed_nodes == completed_before, "RESOURCE: second interaction mutated completion")
 	_check(game_state.get_pending_exploration_content().is_empty(), "RESOURCE: synchronous resolution retained handoff")
-	_check(not _object_has_property(game_state, "inventory"), "RESOURCE: Inventory was created")
+	_check(game_state.inventory_state.get_quantity("healing_herb") == 2, "RESOURCE: M7.4 item reward did not enter shared Inventory")
 	_press_marker(map, "stone_crossing")
 	await process_frame
 	_press_marker(map, "ruins_approach")
