@@ -103,7 +103,7 @@ func _test_asset_and_initial_map() -> void:
 	_check(_marker("stone_crossing").visible and _marker("stone_crossing").disabled, "INITIAL: revealed unreachable Stone Crossing presentation is wrong")
 	_check(_marker("ruins_approach").visible and _marker("ruins_approach").disabled, "INITIAL: revealed unreachable Ruins Approach presentation is wrong")
 	_check(state.completed_nodes.is_empty(), "INITIAL: rendering completed a node")
-	_check(_only_authored_marker_buttons_exist(), "INITIAL: player-facing debug/content Button was added")
+	_check(_only_expected_map_buttons_exist(), "INITIAL: unexpected player-facing Button was added")
 
 
 func _test_defensive_read_boundaries() -> void:
@@ -242,11 +242,13 @@ func _test_invalid_context_handling() -> void:
 	_check("No active Exploration context" in map_controller.get_node("DiagnosticPanel/Margin/DiagnosticLabel").text, "DIAGNOSTIC: empty-context message is unclear")
 
 
-func _only_authored_marker_buttons_exist() -> bool:
+func _only_expected_map_buttons_exist() -> bool:
 	var all_buttons: Array[Node] = prototype_scene.find_children("*", "Button", true, false)
-	if all_buttons.size() != map_controller.marker_buttons.size():
+	if all_buttons.size() != map_controller.marker_buttons.size() + 1:
 		return false
 	for node: Node in all_buttons:
+		if node == map_controller.get_node("PrimaryActionPanel/Margin/Content/PrimaryActionButton"):
+			continue
 		if not node.has_meta("node_id") or not MARKER_IDS.has(node.get_meta("node_id")):
 			return false
 	return true

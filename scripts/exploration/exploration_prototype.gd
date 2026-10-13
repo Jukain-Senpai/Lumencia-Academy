@@ -24,6 +24,10 @@ const PROTOTYPE_CONTEXT := {
 			"reveal_on_complete": ["deep_grove"],
 			"reusable": true,
 			"initial_roadblock": true,
+			"primary_content": {
+				"type": "vn_event",
+				"id": "m7_3_riverside_event",
+			},
 		},
 		{
 			"id": "stone_crossing",
@@ -34,6 +38,10 @@ const PROTOTYPE_CONTEXT := {
 			"reveal_on_complete": [],
 			"reusable": false,
 			"initial_roadblock": false,
+			"primary_content": {
+				"type": "battle",
+				"id": "m7_3_stone_crossing_battle",
+			},
 		},
 		{
 			"id": "ruins_approach",
@@ -44,6 +52,10 @@ const PROTOTYPE_CONTEXT := {
 			"reveal_on_complete": [],
 			"reusable": false,
 			"initial_roadblock": false,
+			"primary_content": {
+				"type": "resource",
+				"id": "m7_3_ruins_resource",
+			},
 		},
 		{
 			"id": "deep_grove",
@@ -63,6 +75,9 @@ var context_ready := false
 
 func _enter_tree() -> void:
 	var exploration_state: RefCounted = GameState.exploration_state
+	if exploration_state.active_context_id == PROTOTYPE_CONTEXT["id"]:
+		context_ready = true
+		return
 	context_ready = exploration_state.define_context(PROTOTYPE_CONTEXT)
 	if context_ready:
 		context_ready = exploration_state.activate_context(PROTOTYPE_CONTEXT["id"])

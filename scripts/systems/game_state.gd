@@ -2,12 +2,14 @@ extends Node
 
 const SAVE_PATH := "user://lumencia_save.json"
 const ExplorationStateModel := preload("res://scripts/systems/exploration_state.gd")
+const EXPLORATION_CONTENT_TYPES := ["vn_event", "battle", "resource"]
 
 var flags: Dictionary = {}
 var bonds: Dictionary = {}
 var pending_battle_context: Dictionary = {}
 var pending_battle_result: Dictionary = {}
 var pending_vn_sequence := ""
+var pending_exploration_content: Dictionary = {}
 var persistence_error := ""
 var exploration_state := ExplorationStateModel.new()
 
@@ -40,6 +42,7 @@ func reset_state() -> void:
 	pending_battle_context.clear()
 	pending_battle_result.clear()
 	pending_vn_sequence = ""
+	pending_exploration_content.clear()
 	exploration_state.clear_runtime()
 
 
@@ -87,6 +90,92 @@ func get_pending_vn_sequence() -> String:
 
 func clear_pending_vn_sequence() -> void:
 	pending_vn_sequence = ""
+
+
+func prepare_exploration_content(content_type: String, content_id: String) -> bool:
+	if (
+		content_type.is_empty()
+		or not EXPLORATION_CONTENT_TYPES.has(content_type)
+		or content_id.is_empty()
+		or not pending_exploration_content.is_empty()
+		or not exploration_state.has_active_context()
+	):
+		return false
+	var node_id: String = exploration_state.current_node_id
+	var node_definition: Dictionary = exploration_state.get_node_definition(node_id)
+	var primary_content: Variant = node_definition.get("primary_content")
+	if typeof(primary_content) != TYPE_DICTIONARY:
+		return false
+	if (
+		primary_content.get("type") != content_type
+		or primary_content.get("id") != content_id
+		or exploration_state.is_node_completed(node_id)
+	):
+		return false
+	pending_exploration_content = {
+		"context_id": exploration_state.active_context_id,
+		"node_id": node_id,
+		"content_type": content_type,
+		"content_id": content_id,
+	}
+	return true
+
+
+func get_pending_exploration_content() -> Dictionary:
+	return pending_exploration_content.duplicate(true)
+
+
+func validate_pending_exploration_content(
+	expected_type := "",
+	expected_content_id := ""
+) -> bool:
+	for field: String in ["context_id", "node_id", "content_type", "content_id"]:
+		if (
+			not pending_exploration_content.has(field)
+			or typeof(pending_exploration_content[field]) != TYPE_STRING
+			or String(pending_exploration_content[field]).is_empty()
+		):
+			return false
+	if pending_exploration_content.keys().size() != 4:
+		return false
+	if (
+		pending_exploration_content["context_id"] != exploration_state.active_context_id
+		or pending_exploration_content["node_id"] != exploration_state.current_node_id
+		or not exploration_state.has_node(pending_exploration_content["node_id"])
+	):
+		return false
+	if not expected_type.is_empty() and pending_exploration_content["content_type"] != expected_type:
+		return false
+	if (
+		not expected_content_id.is_empty()
+		and pending_exploration_content["content_id"] != expected_content_id
+	):
+		return false
+	var node_definition: Dictionary = exploration_state.get_node_definition(
+		pending_exploration_content["node_id"]
+	)
+	var primary_content: Variant = node_definition.get("primary_content")
+	return (
+		typeof(primary_content) == TYPE_DICTIONARY
+		and primary_content.get("type") == pending_exploration_content["content_type"]
+		and primary_content.get("id") == pending_exploration_content["content_id"]
+	)
+
+
+func resolve_pending_exploration_content(
+	expected_type: String,
+	expected_content_id: String
+) -> bool:
+	if not validate_pending_exploration_content(expected_type, expected_content_id):
+		return false
+	var node_id: String = pending_exploration_content["node_id"]
+	if exploration_state.is_node_completed(node_id):
+		return true
+	return exploration_state.complete_primary_content(node_id)
+
+
+func clear_pending_exploration_content() -> void:
+	pending_exploration_content.clear()
 
 
 func has_save_file() -> bool:

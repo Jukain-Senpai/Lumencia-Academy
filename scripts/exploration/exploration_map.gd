@@ -1,7 +1,14 @@
 class_name ExplorationMapController
 extends Control
 
+const VNPrototypeModel := preload("res://scripts/vn/vn_prototype.gd")
 const MARKER_SIZE := Vector2(164.0, 64.0)
+const VN_SCENE_PATH := "res://scenes/vn/vn_prototype.tscn"
+const BATTLE_SCENE_PATH := "res://scenes/battle/battle_sandbox.tscn"
+const BATTLE_CONTENT_SCENES := {
+	"m7_3_stone_crossing_battle": BATTLE_SCENE_PATH,
+}
+const RESOURCE_CONTENT_IDS := ["m7_3_ruins_resource"]
 const GOLD := Color(0.96, 0.76, 0.30, 1.0)
 const PALE_GOLD := Color(1.0, 0.90, 0.62, 1.0)
 const VIOLET := Color(0.17, 0.10, 0.24, 0.96)
@@ -16,16 +23,23 @@ const REUSABLE_TEAL := Color(0.48, 0.92, 0.84, 1.0)
 @onready var marker_layer: Control = %MarkerLayer
 @onready var context_title: Label = %ContextTitle
 @onready var current_location_label: Label = %CurrentLocationLabel
+@onready var primary_action_panel: PanelContainer = %PrimaryActionPanel
+@onready var primary_action_status: Label = %PrimaryActionStatus
+@onready var primary_action_button: Button = %PrimaryActionButton
 @onready var diagnostic_panel: PanelContainer = %DiagnosticPanel
 @onready var diagnostic_label: Label = %DiagnosticLabel
 
 var marker_buttons: Dictionary = {}
 var rendered_map_rect := Rect2()
 var exploration_state: RefCounted
+var interaction_in_progress := false
+var last_interaction_feedback := ""
+var feedback_node_id := ""
 
 
 func _ready() -> void:
 	exploration_state = GameState.exploration_state
+	primary_action_button.pressed.connect(interact_with_current_node)
 	resized.connect(_on_resized)
 	call_deferred("refresh_map")
 
@@ -51,6 +65,7 @@ func refresh_map() -> bool:
 	current_location_label.text = "Current: %s" % current_definition["display_name"]
 	_sync_marker_controls(node_definitions)
 	_update_marker_positions(node_definitions)
+	_refresh_primary_action(current_definition)
 	marker_layer.visible = true
 	diagnostic_panel.visible = false
 	return true
@@ -72,8 +87,142 @@ func _on_marker_pressed(node_id: String) -> void:
 	if not exploration_state.has_node(node_id):
 		_show_diagnostic("Map marker references unknown node '%s'." % node_id)
 		return
-	exploration_state.move_to_node(node_id)
+	if exploration_state.move_to_node(node_id):
+		last_interaction_feedback = ""
+		feedback_node_id = ""
 	refresh_map()
+
+
+func interact_with_current_node() -> bool:
+	if interaction_in_progress or not exploration_state.has_active_context():
+		return false
+	var node_id: String = exploration_state.current_node_id
+	var node_definition: Dictionary = exploration_state.get_node_definition(node_id)
+	var validation_error := _get_primary_content_validation_error(node_definition)
+	if not validation_error.is_empty():
+		return _show_interaction_error(validation_error)
+	if not node_definition.has("primary_content"):
+		return false
+	if exploration_state.is_node_completed(node_id):
+		return false
+	var primary_content: Dictionary = node_definition["primary_content"]
+	var content_type: String = primary_content["type"]
+	var content_id: String = primary_content["id"]
+	match content_type:
+		"vn_event":
+			return _launch_vn_content(content_id)
+		"battle":
+			return _launch_battle_content(content_id)
+		"resource":
+			return _resolve_resource_content(content_id)
+	return _show_interaction_error("Unsupported primary content type '%s'." % content_type)
+
+
+func _launch_vn_content(content_id: String) -> bool:
+	if VNPrototypeModel.resolve_dialogue_sequence_path(content_id).is_empty():
+		return _show_interaction_error("VN content '%s' cannot be resolved." % content_id)
+	if not GameState.prepare_exploration_content("vn_event", content_id):
+		return _show_interaction_error("VN interaction handoff could not be prepared.")
+	if not GameState.prepare_pending_vn_sequence(content_id):
+		GameState.clear_pending_exploration_content()
+		return _show_interaction_error("VN routing is already occupied.")
+	interaction_in_progress = true
+	primary_action_button.disabled = true
+	var change_error := get_tree().change_scene_to_file(VN_SCENE_PATH)
+	if change_error != OK:
+		GameState.clear_pending_vn_sequence()
+		GameState.clear_pending_exploration_content()
+		interaction_in_progress = false
+		return _show_interaction_error(
+			"Could not launch VN content: %s" % error_string(change_error)
+		)
+	return true
+
+
+func _launch_battle_content(content_id: String) -> bool:
+	if not BATTLE_CONTENT_SCENES.has(content_id):
+		return _show_interaction_error("Battle content '%s' cannot be resolved." % content_id)
+	var battle_scene: String = BATTLE_CONTENT_SCENES[content_id]
+	if not ResourceLoader.exists(battle_scene):
+		return _show_interaction_error("Battle scene is missing for '%s'." % content_id)
+	if not GameState.prepare_exploration_content("battle", content_id):
+		return _show_interaction_error("Battle interaction handoff could not be prepared.")
+	interaction_in_progress = true
+	primary_action_button.disabled = true
+	var change_error := get_tree().change_scene_to_file(battle_scene)
+	if change_error != OK:
+		GameState.clear_pending_exploration_content()
+		interaction_in_progress = false
+		return _show_interaction_error(
+			"Could not launch battle content: %s" % error_string(change_error)
+		)
+	return true
+
+
+func _resolve_resource_content(content_id: String) -> bool:
+	if not RESOURCE_CONTENT_IDS.has(content_id):
+		return _show_interaction_error("Resource content '%s' cannot be resolved." % content_id)
+	if not GameState.prepare_exploration_content("resource", content_id):
+		return _show_interaction_error("Resource interaction handoff could not be prepared.")
+	interaction_in_progress = true
+	if not GameState.resolve_pending_exploration_content("resource", content_id):
+		GameState.clear_pending_exploration_content()
+		interaction_in_progress = false
+		return _show_interaction_error("Resource interaction handoff became invalid.")
+	GameState.clear_pending_exploration_content()
+	interaction_in_progress = false
+	last_interaction_feedback = "Resource collected."
+	feedback_node_id = exploration_state.current_node_id
+	return refresh_map()
+
+
+func _refresh_primary_action(node_definition: Dictionary) -> void:
+	var node_id: String = node_definition.get("id", "")
+	var validation_error := _get_primary_content_validation_error(node_definition)
+	if not validation_error.is_empty():
+		_show_interaction_error(validation_error)
+		return
+	if exploration_state.is_node_completed(node_id) or not node_definition.has("primary_content"):
+		primary_action_panel.visible = (
+			node_id == feedback_node_id and not last_interaction_feedback.is_empty()
+		)
+		primary_action_status.text = last_interaction_feedback
+		primary_action_button.visible = false
+		primary_action_button.disabled = true
+		return
+	primary_action_panel.visible = true
+	primary_action_status.text = "Location interaction available."
+	primary_action_button.visible = true
+	primary_action_button.disabled = interaction_in_progress
+
+
+func _get_primary_content_validation_error(node_definition: Dictionary) -> String:
+	if not node_definition.has("primary_content"):
+		return ""
+	var raw_content: Variant = node_definition["primary_content"]
+	if typeof(raw_content) != TYPE_DICTIONARY:
+		return "Current node has malformed primary content."
+	var primary_content: Dictionary = raw_content
+	if typeof(primary_content.get("type")) != TYPE_STRING or primary_content["type"].is_empty():
+		return "Current node primary content has no valid type."
+	if typeof(primary_content.get("id")) != TYPE_STRING or primary_content["id"].is_empty():
+		return "Current node primary content has no valid id."
+	if primary_content.keys().size() != 2:
+		return "Current node primary content has unexpected fields."
+	if not ["vn_event", "battle", "resource"].has(primary_content["type"]):
+		return "Unsupported primary content type '%s'." % primary_content["type"]
+	return ""
+
+
+func _show_interaction_error(message: String) -> bool:
+	last_interaction_feedback = message
+	feedback_node_id = exploration_state.current_node_id if exploration_state != null else ""
+	primary_action_panel.visible = true
+	primary_action_status.text = message
+	primary_action_button.visible = false
+	primary_action_button.disabled = true
+	push_error("Exploration interaction error: %s" % message)
+	return false
 
 
 func _sync_marker_controls(node_definitions: Array) -> void:

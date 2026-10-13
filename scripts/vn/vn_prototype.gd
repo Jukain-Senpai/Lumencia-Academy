@@ -3,14 +3,17 @@ extends Control
 const INITIAL_DIALOGUE_PATH := "res://data/dialogue/vn_prototype_m1.json"
 const DIALOGUE_SEQUENCE_PATHS := {
 	"m6_training_hall_postbattle": "res://data/dialogue/m6_training_hall_postbattle.json",
+	"m7_3_riverside_event": "res://data/dialogue/m7_3_riverside_event.json",
 }
 const KNOWN_DIALOGUE_PATHS := [
 	INITIAL_DIALOGUE_PATH,
 	"res://data/dialogue/vn_hallway_m2_3.json",
 	"res://data/dialogue/m6_training_hall_prebattle.json",
 	"res://data/dialogue/m6_training_hall_postbattle.json",
+	"res://data/dialogue/m7_3_riverside_event.json",
 ]
 const BATTLE_SCENE_PATH := "res://scenes/battle/battle_sandbox.tscn"
+const EXPLORATION_MAP_SCENE_PATH := "res://scenes/exploration/exploration_map.tscn"
 const BATTLE_REACTION_FACTS := [
 	"jukain_attacked_hiruko",
 	"hiruko_damaged_by_enemy",
@@ -67,6 +70,7 @@ var scene_ended := false
 var dialogue_ready := false
 var last_dialogue_error := ""
 var battle_launch_committed := false
+var exploration_return_committed := false
 var executed_reaction_effect_node_ids: Dictionary = {}
 
 
@@ -111,7 +115,13 @@ static func resolve_dialogue_sequence_path(sequence_id: String) -> String:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if battle_launch_committed or not dialogue_ready or scene_ended or awaiting_choice:
+	if (
+		battle_launch_committed
+		or exploration_return_committed
+		or not dialogue_ready
+		or scene_ended
+		or awaiting_choice
+	):
 		return
 
 	var requested_advance := false
@@ -214,6 +224,9 @@ func _validate_dialogue_data(data: Dictionary, dialogue_path: String) -> Diction
 					return {}
 			"start_battle":
 				if not _validate_start_battle_node(node, node_id):
+					return {}
+			"return_to_exploration":
+				if not _validate_return_to_exploration_node(node, node_id):
 					return {}
 			"end":
 				pass
@@ -515,6 +528,16 @@ func _validate_start_battle_node(node: Dictionary, node_id: String) -> bool:
 	return true
 
 
+func _validate_return_to_exploration_node(node: Dictionary, node_id: String) -> bool:
+	if not _has_only_fields(
+		node,
+		["id", "type", "content_id"],
+		"return_to_exploration node '%s'" % node_id
+	):
+		return false
+	return not _required_string(node, "content_id", node_id).is_empty()
+
+
 func _has_only_fields(data: Dictionary, allowed_fields: Array, context: String) -> bool:
 	for field: Variant in data:
 		if not allowed_fields.has(field):
@@ -560,6 +583,7 @@ func _reset_prototype() -> void:
 	awaiting_choice = false
 	scene_ended = false
 	battle_launch_committed = false
+	exploration_return_committed = false
 
 	story_background.show()
 	character_layer.show()
@@ -600,6 +624,8 @@ func _show_node(node_id: String) -> void:
 			_transition_to_sequence(node)
 		"start_battle":
 			_start_battle(node)
+		"return_to_exploration":
+			_return_to_exploration(node)
 		"end":
 			_finish_scene()
 
@@ -891,6 +917,26 @@ func _start_battle(node: Dictionary) -> bool:
 			% [node["battle_scene"], error_string(change_error)]
 		)
 		return false
+	return true
+
+
+func _return_to_exploration(node: Dictionary) -> bool:
+	if exploration_return_committed:
+		return false
+	var content_id: String = node["content_id"]
+	if not GameState.resolve_pending_exploration_content("vn_event", content_id):
+		_report_runtime_error("Exploration return handoff is missing or invalid.")
+		return false
+	exploration_return_committed = true
+	dialogue_ready = false
+	var change_error := get_tree().change_scene_to_file(EXPLORATION_MAP_SCENE_PATH)
+	if change_error != OK:
+		exploration_return_committed = false
+		_report_runtime_error(
+			"Could not return to Exploration: %s" % error_string(change_error)
+		)
+		return false
+	GameState.clear_pending_exploration_content()
 	return true
 
 

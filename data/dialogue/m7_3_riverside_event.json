@@ -1,0 +1,35 @@
+{
+  "background": "res://assets/art/backgrounds/academy_training_hall.png",
+  "start": "riverside_01",
+  "nodes": [
+    {
+      "id": "riverside_01",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "The river bends close to the old trail here.",
+      "next": "riverside_02"
+    },
+    {
+      "id": "riverside_02",
+      "type": "line",
+      "speaker": "Jukain",
+      "expression": "tired",
+      "text": "And the tracks continue past the grove.",
+      "next": "riverside_03"
+    },
+    {
+      "id": "riverside_03",
+      "type": "line",
+      "speaker": "Hiruko",
+      "expression": "neutral",
+      "text": "Then we have another route to check.",
+      "next": "return_to_map"
+    },
+    {
+      "id": "return_to_map",
+      "type": "return_to_exploration",
+      "content_id": "m7_3_riverside_event"
+    }
+  ]
+}

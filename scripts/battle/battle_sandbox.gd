@@ -8,6 +8,7 @@ const JukainCombatStateModel := preload("res://scripts/battle/jukain_combat_stat
 const JukainPrescriptStateModel := preload("res://scripts/battle/jukain_prescript_state.gd")
 const VNPrototypeModel := preload("res://scripts/vn/vn_prototype.gd")
 const VN_SCENE_PATH := "res://scenes/vn/vn_prototype.tscn"
+const EXPLORATION_MAP_SCENE_PATH := "res://scenes/exploration/exploration_map.tscn"
 const UNIT_CARD_HEIGHT := 44.0
 const UNIT_CARD_GAP := 2.0
 const HIRUKO_UNIT_ID: StringName = &"party_1"
@@ -1568,11 +1569,13 @@ func _end_battle(result: BattleResult) -> void:
 	_refresh_turn_ui()
 	if (
 		result == BattleResult.VICTORY
-		and battle_result_committed
 		and automatic_vn_return_enabled
 		and get_tree().current_scene == self
 	):
-		_request_battle_return()
+		if not GameState.get_pending_exploration_content().is_empty():
+			_request_exploration_battle_return()
+		elif battle_result_committed:
+			_request_battle_return()
 
 
 func _reset_battle_result_tracking() -> void:
@@ -1662,6 +1665,34 @@ func _request_battle_return() -> bool:
 		)
 
 	GameState.clear_pending_battle_context()
+	return true
+
+
+func _request_exploration_battle_return() -> bool:
+	if battle_return_committed or battle_result != BattleResult.VICTORY:
+		return false
+	var handoff: Dictionary = GameState.get_pending_exploration_content()
+	var raw_content_id: Variant = handoff.get("content_id")
+	if typeof(raw_content_id) != TYPE_STRING or String(raw_content_id).is_empty():
+		return _report_battle_return_error(
+			"Exploration Victory return was blocked by a malformed content handoff."
+		)
+	var content_id := String(raw_content_id)
+	if not GameState.resolve_pending_exploration_content("battle", content_id):
+		return _report_battle_return_error(
+			"Exploration Victory return was blocked by a stale or mismatched handoff."
+		)
+
+	battle_return_committed = true
+	last_battle_return_error = ""
+	var change_error := get_tree().change_scene_to_file(EXPLORATION_MAP_SCENE_PATH)
+	if change_error != OK:
+		battle_return_committed = false
+		return _report_battle_return_error(
+			"Could not return to Exploration scene '%s': %s"
+			% [EXPLORATION_MAP_SCENE_PATH, error_string(change_error)]
+		)
+	GameState.clear_pending_exploration_content()
 	return true
 
 

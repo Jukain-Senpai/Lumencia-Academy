@@ -1,0 +1,5 @@
+[gd_scene format=3 uid="uid://c8dinugahx7xe"]
+
+[ext_resource type="PackedScene" uid="uid://d7explorationprototype" path="res://scenes/exploration/m7_2_exploration_prototype.tscn" id="1_prototype"]
+
+[node name="M7_3ExplorationPrototype" instance=ExtResource("1_prototype")]
