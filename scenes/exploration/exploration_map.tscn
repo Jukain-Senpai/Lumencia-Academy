@@ -223,6 +223,53 @@ theme_override_font_sizes/font_size = 13
 text = "Night Rest: party recovered HP."
 autowrap_mode = 2
 
+[node name="SaveLoadPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+offset_left = 24.0
+offset_top = 188.0
+offset_right = 300.0
+offset_bottom = 270.0
+theme_override_styles/panel = SubResource("Style_legend")
+
+[node name="Margin" type="MarginContainer" parent="SaveLoadPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 6
+
+[node name="Content" type="VBoxContainer" parent="SaveLoadPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="Buttons" type="HBoxContainer" parent="SaveLoadPanel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MapSaveButton" type="Button" parent="SaveLoadPanel/Margin/Content/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.9, 0.62, 1)
+text = "Save"
+
+[node name="MapLoadButton" type="Button" parent="SaveLoadPanel/Margin/Content/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.9, 0.62, 1)
+text = "Load"
+
+[node name="SaveLoadStatus" type="Label" parent="SaveLoadPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.91, 0.9, 0.98, 1)
+theme_override_font_sizes/font_size = 13
+text = "Save / Load"
+autowrap_mode = 2
+
 [node name="LegendPanel" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 3

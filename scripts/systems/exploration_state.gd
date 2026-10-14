@@ -6,6 +6,7 @@ const TIME_SLOTS := "TIME_SLOTS"
 const MULTI_DAY := "MULTI_DAY"
 const DAYPARTS := ["Morning", "Afternoon", "Night"]
 const MAX_TIME_COUNTER := 9223372036854775807
+const MAX_SAFE_SAVE_INTEGER := 9007199254740991
 const PROTOTYPE_FINAL_DESTINATION := "prototype_story_result"
 
 var active_context_id := ""
@@ -86,6 +87,212 @@ func clear_runtime() -> void:
 func reset_session() -> void:
 	clear_runtime()
 	_closed_context_ids.clear()
+
+
+func get_save_snapshot() -> Dictionary:
+	var leftovers: Array = []
+	for node_id: String in leftover_rewards:
+		var reward: Dictionary = leftover_rewards[node_id]
+		leftovers.append({"node_id": node_id, "item_id": reward["item_id"], "quantity": reward["quantity"]})
+	leftovers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["node_id"] < b["node_id"])
+	var uses: Array = []
+	for node_id: String in hub_action_uses:
+		for action_id: String in hub_action_uses[node_id]:
+			uses.append({"node_id": node_id, "action_id": action_id,
+				"remaining": hub_action_uses[node_id][action_id]})
+	uses.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["node_id"] < b["node_id"] or (a["node_id"] == b["node_id"] and a["action_id"] < b["action_id"]))
+	return {
+		"active_context_id": active_context_id,
+		"current_node_id": current_node_id,
+		"revealed_nodes": _sorted_keys(revealed_nodes),
+		"completed_nodes": _sorted_keys(completed_nodes),
+		"roadblocked_nodes": _sorted_keys(roadblocked_nodes),
+		"leftover_rewards": leftovers,
+		"time": {"mode": time_mode, "day": day_number, "daypart_index": daypart_index,
+			"actions_spent": actions_spent_in_daypart, "total_actions": total_timed_actions},
+		"hub_action_uses": uses,
+		"closed_context_ids": _sorted_keys(_closed_context_ids),
+	}
+
+
+func apply_save_snapshot(snapshot: Dictionary) -> bool:
+	if not _has_exact_keys(snapshot, ["active_context_id", "current_node_id", "revealed_nodes",
+		"completed_nodes", "roadblocked_nodes", "leftover_rewards", "time",
+		"hub_action_uses", "closed_context_ids"]):
+		return false
+	var context_id: Variant = snapshot["active_context_id"]
+	var node_id: Variant = snapshot["current_node_id"]
+	if typeof(context_id) != TYPE_STRING or typeof(node_id) != TYPE_STRING:
+		return false
+	var closed := _validate_saved_node_ids(snapshot["closed_context_ids"], _context_definitions)
+	if not closed["valid"] or (not context_id.is_empty() and closed["ids"].has(context_id)):
+		return false
+	var nodes: Dictionary = {}
+	if not context_id.is_empty():
+		if not _context_definitions.has(context_id):
+			return false
+		for raw_node: Dictionary in _context_definitions[context_id]["nodes"]:
+			nodes[raw_node["id"]] = raw_node
+		if not nodes.has(node_id):
+			return false
+	elif not node_id.is_empty():
+		return false
+	var revealed := _validate_saved_node_ids(snapshot["revealed_nodes"], nodes)
+	var completed := _validate_saved_node_ids(snapshot["completed_nodes"], nodes)
+	var roadblocked := _validate_saved_node_ids(snapshot["roadblocked_nodes"], nodes)
+	if not revealed["valid"] or not completed["valid"] or not roadblocked["valid"]:
+		return false
+	if not context_id.is_empty():
+		if not revealed["ids"].has(node_id):
+			return false
+		for known_id: String in nodes:
+			if nodes[known_id]["initially_revealed"] and not revealed["ids"].has(known_id):
+				return false
+	for completed_id: String in completed["ids"]:
+		if not revealed["ids"].has(completed_id):
+			return false
+	var validated_leftovers := _validate_saved_leftovers(snapshot["leftover_rewards"], nodes, completed["ids"])
+	var validated_uses := _validate_saved_hub_uses(snapshot["hub_action_uses"], nodes)
+	if not validated_leftovers["valid"] or not validated_uses["valid"]:
+		return false
+	var saved_time: Variant = snapshot["time"]
+	if typeof(saved_time) != TYPE_DICTIONARY or not _has_exact_keys(saved_time,
+		["mode", "day", "daypart_index", "actions_spent", "total_actions"]):
+		return false
+	var expected_mode: String = NO_TIME if context_id.is_empty() else _context_definitions[context_id].get("time", {}).get("mode", NO_TIME)
+	if saved_time["mode"] != expected_mode:
+		return false
+	if (
+		not _is_saved_integer(saved_time["day"], 1, MAX_SAFE_SAVE_INTEGER)
+		or not _is_saved_integer(saved_time["daypart_index"], 0, 2)
+		or not _is_saved_integer(saved_time["actions_spent"], 0, 1)
+		or not _is_saved_integer(saved_time["total_actions"], 0, MAX_SAFE_SAVE_INTEGER)
+	):
+		return false
+	var day: int = int(saved_time["day"])
+	var part: int = int(saved_time["daypart_index"])
+	var spent: int = int(saved_time["actions_spent"])
+	var total: int = int(saved_time["total_actions"])
+	if expected_mode == NO_TIME:
+		if day != 1 or part != 0 or spent != 0 or total != 0:
+			return false
+	elif day > int((MAX_SAFE_SAVE_INTEGER - part * 2 - spent) / 6) + 1 or total != (day - 1) * 6 + part * 2 + spent:
+		return false
+
+	# All validation precedes the first mutation of this state object.
+	clear_runtime()
+	_closed_context_ids = closed["ids"].duplicate(true)
+	if not context_id.is_empty():
+		if not activate_context(context_id):
+			return false
+		current_node_id = node_id
+		revealed_nodes = revealed["ids"]
+		completed_nodes = completed["ids"]
+		roadblocked_nodes = roadblocked["ids"]
+		leftover_rewards = validated_leftovers["rewards"]
+		hub_action_uses = validated_uses["uses"]
+	time_mode = expected_mode
+	day_number = day
+	daypart_index = part
+	actions_spent_in_daypart = spent
+	total_timed_actions = total
+	return true
+
+
+func _validate_saved_node_ids(raw_ids: Variant, allowed: Dictionary) -> Dictionary:
+	var result := {"valid": false, "ids": {}}
+	if typeof(raw_ids) != TYPE_ARRAY:
+		return result
+	for raw_id: Variant in raw_ids:
+		if typeof(raw_id) != TYPE_STRING or not allowed.has(raw_id) or result["ids"].has(raw_id):
+			return result
+		result["ids"][raw_id] = true
+	result["valid"] = true
+	return result
+
+
+func _validate_saved_leftovers(raw_rewards: Variant, nodes: Dictionary, completed: Dictionary) -> Dictionary:
+	var result := {"valid": false, "rewards": {}}
+	if typeof(raw_rewards) != TYPE_ARRAY:
+		return result
+	for raw_reward: Variant in raw_rewards:
+		if typeof(raw_reward) != TYPE_DICTIONARY or not _has_exact_keys(raw_reward,
+			["node_id", "item_id", "quantity"]):
+			return result
+		var reward_node: Variant = raw_reward["node_id"]
+		var item_id: Variant = raw_reward["item_id"]
+		if typeof(reward_node) != TYPE_STRING or not nodes.has(reward_node) or result["rewards"].has(reward_node) or not completed.has(reward_node):
+			return result
+		var primary: Variant = nodes[reward_node].get("primary_content")
+		if typeof(primary) != TYPE_DICTIONARY or primary.get("type") != "resource":
+			return result
+		var authored_reward: Variant = primary.get("reward")
+		if typeof(authored_reward) != TYPE_DICTIONARY or authored_reward.get("type") != "item" or item_id != authored_reward.get("item_id"):
+			return result
+		if not _is_saved_integer(raw_reward["quantity"], 1, int(authored_reward.get("quantity", 0))):
+			return result
+		result["rewards"][reward_node] = {"item_id": item_id, "quantity": int(raw_reward["quantity"])}
+	result["valid"] = true
+	return result
+
+
+func _validate_saved_hub_uses(raw_uses: Variant, nodes: Dictionary) -> Dictionary:
+	var result := {"valid": false, "uses": {}}
+	if typeof(raw_uses) != TYPE_ARRAY:
+		return result
+	var expected := 0
+	for node_id: String in nodes:
+		for raw_action: Variant in nodes[node_id].get("hub_actions", []):
+			if raw_action.get("type") == "rest":
+				expected += 1
+	for raw_use: Variant in raw_uses:
+		if typeof(raw_use) != TYPE_DICTIONARY or not _has_exact_keys(raw_use,
+			["node_id", "action_id", "remaining"]):
+			return result
+		var node_id: Variant = raw_use["node_id"]
+		var action_id: Variant = raw_use["action_id"]
+		if typeof(node_id) != TYPE_STRING or typeof(action_id) != TYPE_STRING or not nodes.has(node_id):
+			return result
+		if not result["uses"].has(node_id):
+			result["uses"][node_id] = {}
+		if result["uses"][node_id].has(action_id):
+			return result
+		var maximum := -1
+		for raw_action: Variant in nodes[node_id].get("hub_actions", []):
+			if raw_action.get("type") == "rest" and raw_action.get("id") == action_id:
+				maximum = raw_action["max_uses"]
+				break
+		if maximum < 0 or not _is_saved_integer(raw_use["remaining"], 0, maximum):
+			return result
+		result["uses"][node_id][action_id] = int(raw_use["remaining"])
+	if raw_uses.size() != expected:
+		return result
+	result["valid"] = true
+	return result
+
+
+func _is_saved_integer(value: Variant, minimum: int, maximum: int) -> bool:
+	if typeof(value) == TYPE_INT:
+		return value >= minimum and value <= maximum
+	if typeof(value) != TYPE_FLOAT or is_nan(value) or is_inf(value):
+		return false
+	return value == floor(value) and value >= float(minimum) and value <= float(maximum)
+
+
+func _has_exact_keys(data: Dictionary, required: Array[String]) -> bool:
+	if data.size() != required.size():
+		return false
+	for key: String in required:
+		if not data.has(key):
+			return false
+	return true
+
+
+func _sorted_keys(data: Dictionary) -> Array:
+	var keys: Array = data.keys()
+	keys.sort()
+	return keys
 
 
 func is_context_closed(context_id: String) -> bool:

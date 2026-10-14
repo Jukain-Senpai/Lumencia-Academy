@@ -104,6 +104,7 @@ func _test_asset_and_initial_map() -> void:
 	_check(_marker("ruins_approach").visible and _marker("ruins_approach").disabled, "INITIAL: revealed unreachable Ruins Approach presentation is wrong")
 	_check(state.completed_nodes.is_empty(), "INITIAL: rendering completed a node")
 	_check(not map_controller.warning_preference_panel.visible and not map_controller.warning_overlay.visible, "INITIAL: M7.7 warning controls leaked into M7.2 prototype")
+	_check(not map_controller.save_load_panel.visible, "INITIAL: M7.8 Save/Load controls leaked into M7.2 prototype")
 	_check(_only_expected_map_buttons_exist(), "INITIAL: unexpected player-facing Button was added")
 
 
@@ -258,6 +259,8 @@ func _only_expected_map_buttons_exist() -> bool:
 		map_controller.get_node("WarningPreferencePanel/Margin/WarningPreferenceButton"),
 		map_controller.get_node("WarningOverlay/WarningPanel/Margin/Content/Actions/WarningGoBackButton"),
 		map_controller.get_node("WarningOverlay/WarningPanel/Margin/Content/Actions/WarningContinueButton"),
+		map_controller.get_node("SaveLoadPanel/Margin/Content/Buttons/MapSaveButton"),
+		map_controller.get_node("SaveLoadPanel/Margin/Content/Buttons/MapLoadButton"),
 	]
 	if all_buttons.size() != map_controller.marker_buttons.size() + expected_utility_buttons.size():
 		return false

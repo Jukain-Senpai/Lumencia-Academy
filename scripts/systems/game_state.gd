@@ -1,6 +1,12 @@
 extends Node
 
 const SAVE_PATH := "user://lumencia_save.json"
+const SAVE_SCHEMA_VERSION := 2
+const MAX_SAFE_SAVE_INTEGER := 9007199254740991
+const PROGRESSION_CONTEXT_ID := "m7_7_progression_prototype_forest"
+const PROGRESSION_CONTEXT_SCRIPT := "res://scripts/exploration/progression_prototype.gd"
+const PROGRESSION_ENTRY_SCENE_PATH := "res://scenes/exploration/m7_7_progression_prototype.tscn"
+const VN_SCENE_PATH := "res://scenes/vn/vn_prototype.tscn"
 const ExplorationStateModel := preload("res://scripts/systems/exploration_state.gd")
 const InventoryStateModel := preload("res://scripts/systems/inventory_state.gd")
 const PartyRuntimeStateModel := preload("res://scripts/systems/party_runtime_state.gd")
@@ -20,6 +26,7 @@ var pending_battle_result: Dictionary = {}
 var pending_vn_sequence := ""
 var pending_exploration_content: Dictionary = {}
 var persistence_error := ""
+var persistence_feedback := ""
 var exploration_state := ExplorationStateModel.new()
 var inventory_state := InventoryStateModel.new()
 var party_runtime_state := PartyRuntimeStateModel.new()
@@ -61,6 +68,7 @@ func reset_state() -> void:
 	party_runtime_state.reset()
 	_money = 0
 	_missable_content_warning_enabled = true
+	persistence_feedback = ""
 
 
 func is_missable_content_warning_enabled() -> bool:
@@ -474,18 +482,7 @@ func save_game(sequence_path: String, node_id: String) -> bool:
 		"flags": flags.duplicate(true),
 		"bonds": bonds.duplicate(true),
 	}
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if file == null:
-		return _report_persistence_error(
-			"Could not open %s for writing: %s" % [SAVE_PATH, error_string(FileAccess.get_open_error())]
-		)
-	file.store_string(JSON.stringify(save_data, "\t"))
-	file.flush()
-	if file.get_error() != OK:
-		return _report_persistence_error(
-			"Could not finish writing %s: %s" % [SAVE_PATH, error_string(file.get_error())]
-		)
-	return true
+	return _write_save_document(save_data)
 
 
 func read_save_data() -> Dictionary:
@@ -513,7 +510,14 @@ func read_save_data() -> Dictionary:
 	if typeof(json.data) != TYPE_DICTIONARY:
 		_report_persistence_error("Save data root must be an object.")
 		return {}
-
+	if json.data.has("schema_version"):
+		if not _is_safe_save_integer(json.data["schema_version"], 0) or int(json.data["schema_version"]) != SAVE_SCHEMA_VERSION:
+			_report_persistence_error("Unsupported save schema version.")
+			return {}
+		return json.data.duplicate(true)
+	if json.data.has("kind") or json.data.has("exploration"):
+		_report_persistence_error("Versioned save is missing its schema version.")
+		return {}
 	return _normalize_save_data(json.data)
 
 
@@ -567,6 +571,326 @@ func _is_integer_value(value: Variant) -> bool:
 	if typeof(value) == TYPE_INT:
 		return true
 	return typeof(value) == TYPE_FLOAT and value == floor(value)
+
+
+func save_exploration_game() -> bool:
+	persistence_error = ""
+	var scene: Node = get_tree().current_scene
+	if scene == null or not PROGRESSION_SOURCE_SCENE_PATHS.has(scene.scene_file_path):
+		return _report_persistence_error("Save unavailable outside the progression map.")
+	var map: Node = scene if scene.has_method("get_marker_button") else scene.find_child("ExplorationMap", true, false)
+	if map == null or map.warning_dialog_open or map.progression_in_progress or map.interaction_in_progress or map.shop_purchase_in_progress or map.hub_activation_in_progress:
+		return _report_persistence_error("Save unavailable during an interaction or transition.")
+	if not _has_stable_save_handoffs() or not exploration_state.has_active_context() or exploration_state.active_context_id != PROGRESSION_CONTEXT_ID or exploration_state.day_transition_pending:
+		return _report_persistence_error("Save unavailable until the map state is stable.")
+	return _save_versioned_kind("exploration")
+
+
+func save_result_game() -> bool:
+	persistence_error = ""
+	var scene: Node = get_tree().current_scene
+	if scene == null or scene.scene_file_path != PROGRESSION_RESULT_SCENE_PATH or not _has_stable_save_handoffs():
+		return _report_persistence_error("Save unavailable outside the stable progression result.")
+	if exploration_state.has_active_context() or not exploration_state.is_context_closed(PROGRESSION_CONTEXT_ID):
+		return _report_persistence_error("Progression result is not closed and stable.")
+	return _save_versioned_kind("result")
+
+
+func _save_versioned_kind(kind: String) -> bool:
+	var save_data := {
+		"schema_version": SAVE_SCHEMA_VERSION,
+		"kind": kind,
+		"flags": flags.duplicate(true),
+		"bonds": bonds.duplicate(true),
+		"exploration": exploration_state.get_save_snapshot(),
+		"inventory": inventory_state.get_save_snapshot(),
+		"money": _money,
+		"party_hp": party_runtime_state.get_save_snapshot(),
+		"preferences": {"missable_content_warning_enabled": _missable_content_warning_enabled},
+	}
+	if kind == "result":
+		save_data["destination"] = ExplorationStateModel.PROTOTYPE_FINAL_DESTINATION
+	if _prepare_versioned_candidate(save_data).is_empty():
+		return false
+	return _write_save_document(save_data)
+
+
+func load_saved_game() -> bool:
+	var save_data: Dictionary = read_save_data()
+	if save_data.is_empty():
+		return false
+	if save_data.has("schema_version"):
+		return load_versioned_save_data(save_data)
+	return _load_legacy_save_data(save_data)
+
+
+func load_versioned_save_data(save_data: Dictionary) -> bool:
+	persistence_error = ""
+	var candidate: Dictionary = _prepare_versioned_candidate(save_data)
+	if candidate.is_empty():
+		return false
+	return _route_loaded_candidate(candidate, candidate["scene_path"])
+
+
+func _prepare_versioned_candidate(save_data: Dictionary) -> Dictionary:
+	var base_fields: Array[String] = ["schema_version", "kind", "flags", "bonds",
+		"exploration", "inventory", "money", "party_hp", "preferences"]
+	if not save_data.has("kind") or save_data["kind"] not in ["exploration", "result"]:
+		_report_persistence_error("Unknown save resume kind.")
+		return {}
+	var kind: String = save_data["kind"]
+	var required: Array[String] = base_fields.duplicate()
+	if kind == "result":
+		required.append("destination")
+	if not _has_exact_save_fields(save_data, required):
+		_report_persistence_error("Versioned save fields are missing or unexpected.")
+		return {}
+	if not _is_safe_save_integer(save_data["schema_version"], 0) or int(save_data["schema_version"]) != SAVE_SCHEMA_VERSION:
+		_report_persistence_error("Unsupported save schema version.")
+		return {}
+	var story: Dictionary = _validate_story_fields(save_data.get("flags"), save_data.get("bonds"))
+	if story.is_empty():
+		_report_persistence_error("Saved flags or Bonds are invalid.")
+		return {}
+	if not _is_safe_save_integer(save_data["money"], 0):
+		_report_persistence_error("Saved money is not an exact nonnegative integer.")
+		return {}
+	var preferences: Variant = save_data["preferences"]
+	if typeof(preferences) != TYPE_DICTIONARY or not _has_exact_save_fields(preferences,
+		["missable_content_warning_enabled"]) or typeof(preferences["missable_content_warning_enabled"]) != TYPE_BOOL:
+		_report_persistence_error("Saved warning preference is invalid.")
+		return {}
+	if typeof(save_data["exploration"]) != TYPE_DICTIONARY:
+		_report_persistence_error("Saved Exploration snapshot is invalid.")
+		return {}
+	var context_script: Script = load(PROGRESSION_CONTEXT_SCRIPT)
+	if context_script == null:
+		_report_persistence_error("Trusted Exploration context builder is missing.")
+		return {}
+	var context: Dictionary = context_script.call("build_context")
+	var candidate_exploration: ExplorationState = ExplorationStateModel.new()
+	if not candidate_exploration.define_context(context) or not candidate_exploration.apply_save_snapshot(save_data["exploration"]):
+		_report_persistence_error("Saved Exploration state conflicts with authored context or rules.")
+		return {}
+	if kind == "exploration":
+		if candidate_exploration.active_context_id != PROGRESSION_CONTEXT_ID or candidate_exploration.is_context_closed(PROGRESSION_CONTEXT_ID):
+			_report_persistence_error("Saved map context is unavailable or closed.")
+			return {}
+	else:
+		if save_data["destination"] != ExplorationStateModel.PROTOTYPE_FINAL_DESTINATION or candidate_exploration.has_active_context() or not candidate_exploration.is_context_closed(PROGRESSION_CONTEXT_ID):
+			_report_persistence_error("Saved progression result is inconsistent.")
+			return {}
+	var candidate_inventory: InventoryState = InventoryStateModel.new()
+	if not candidate_inventory.apply_save_snapshot(save_data["inventory"]):
+		_report_persistence_error("Saved inventory has an unknown, duplicate, or invalid item quantity.")
+		return {}
+	var candidate_party: PartyRuntimeState = PartyRuntimeStateModel.new()
+	if not candidate_party.apply_save_snapshot(save_data["party_hp"]):
+		_report_persistence_error("Saved party HP is incomplete or invalid.")
+		return {}
+	return {
+		"scene_path": PROGRESSION_ENTRY_SCENE_PATH if kind == "exploration" else PROGRESSION_RESULT_SCENE_PATH,
+		"flags": story["flags"], "bonds": story["bonds"],
+		"exploration_state": candidate_exploration,
+		"inventory_state": candidate_inventory,
+		"party_runtime_state": candidate_party,
+		"money": int(save_data["money"]),
+		"warning": preferences["missable_content_warning_enabled"],
+	}
+
+
+func _validate_story_fields(raw_flags: Variant, raw_bonds: Variant) -> Dictionary:
+	if typeof(raw_flags) != TYPE_DICTIONARY or typeof(raw_bonds) != TYPE_DICTIONARY:
+		return {}
+	var checked_flags: Dictionary = {}
+	for flag_name: Variant in raw_flags:
+		if typeof(flag_name) != TYPE_STRING or String(flag_name).is_empty() or typeof(raw_flags[flag_name]) != TYPE_BOOL:
+			return {}
+		checked_flags[flag_name] = raw_flags[flag_name]
+	var checked_bonds: Dictionary = {}
+	for bond_name: Variant in raw_bonds:
+		if typeof(bond_name) != TYPE_STRING or String(bond_name).is_empty() or not _is_safe_save_integer(raw_bonds[bond_name], -MAX_SAFE_SAVE_INTEGER):
+			return {}
+		checked_bonds[bond_name] = int(raw_bonds[bond_name])
+	return {"flags": checked_flags, "bonds": checked_bonds}
+
+
+func _has_exact_save_fields(data: Dictionary, fields: Array[String]) -> bool:
+	if data.size() != fields.size():
+		return false
+	for field: String in fields:
+		if not data.has(field):
+			return false
+	return true
+
+
+func _is_safe_save_integer(value: Variant, minimum: int) -> bool:
+	if typeof(value) == TYPE_INT:
+		return value >= minimum and value <= MAX_SAFE_SAVE_INTEGER
+	if typeof(value) != TYPE_FLOAT or is_nan(value) or is_inf(value):
+		return false
+	return value == floor(value) and value >= float(minimum) and value <= float(MAX_SAFE_SAVE_INTEGER)
+
+
+func _has_stable_save_handoffs() -> bool:
+	return pending_battle_context.is_empty() and pending_battle_result.is_empty() and pending_vn_sequence.is_empty() and pending_exploration_content.is_empty()
+
+
+func _load_legacy_save_data(save_data: Dictionary) -> bool:
+	var candidate := {
+		"flags": save_data["flags"].duplicate(true),
+		"bonds": save_data["bonds"].duplicate(true),
+		"exploration_state": ExplorationStateModel.new(),
+		"inventory_state": InventoryStateModel.new(),
+		"party_runtime_state": PartyRuntimeStateModel.new(),
+		"money": 0,
+		"warning": true,
+	}
+	return _route_loaded_candidate(candidate, VN_SCENE_PATH, save_data)
+
+
+func _route_loaded_candidate(candidate: Dictionary, scene_path: String, legacy_data: Dictionary = {}) -> bool:
+	var tree: SceneTree = get_tree()
+	var source: Node = tree.current_scene
+	if source == null or not source.is_inside_tree():
+		return _report_persistence_error("Current scene is unavailable for loading.")
+	if not ResourceLoader.exists(scene_path):
+		return _report_persistence_error("Saved destination scene is missing.")
+	var resource: Resource = load(scene_path)
+	if not resource is PackedScene or not resource.can_instantiate():
+		return _report_persistence_error("Saved destination scene cannot be instantiated.")
+	var destination: Node = resource.instantiate()
+	if destination == null:
+		return _report_persistence_error("Saved destination could not be prepared.")
+	var legacy_package: Dictionary = {}
+	if not legacy_data.is_empty():
+		legacy_package = destination.prepare_legacy_save_data(legacy_data)
+		if legacy_package.is_empty():
+			var legacy_error: String = destination.last_dialogue_error
+			destination.free()
+			return _report_persistence_error(legacy_error if not legacy_error.is_empty() else "Saved dialogue sequence or line is invalid.")
+	if destination is CanvasItem:
+		destination.visible = false
+	var previous: Dictionary = _capture_live_session()
+	var source_name: String = source.name
+	source.name = "M7_8PreviousScene"
+	_install_candidate_session(candidate)
+	persistence_feedback = "Loaded successfully."
+	tree.root.add_child(destination)
+	var route_ok := destination.is_inside_tree()
+	if route_ok and scene_path == PROGRESSION_ENTRY_SCENE_PATH:
+		route_ok = destination.context_ready
+	if route_ok and scene_path == VN_SCENE_PATH:
+		route_ok = destination.dialogue_ready
+		if route_ok and not legacy_data.is_empty():
+			route_ok = destination.apply_legacy_save_data(legacy_data, legacy_package)
+	if not route_ok:
+		destination.free()
+		_restore_live_session(previous)
+		source.name = source_name
+		return _report_persistence_error("Saved destination could not initialize; the current session was restored.")
+	tree.current_scene = destination
+	if destination is CanvasItem:
+		destination.visible = true
+	source.queue_free()
+	return true
+
+
+func _capture_live_session() -> Dictionary:
+	return {
+		"flags": flags, "bonds": bonds,
+		"exploration_state": exploration_state,
+		"inventory_state": inventory_state,
+		"party_runtime_state": party_runtime_state,
+		"money": _money, "warning": _missable_content_warning_enabled,
+		"persistence_feedback": persistence_feedback,
+		"pending_battle_context": pending_battle_context,
+		"pending_battle_result": pending_battle_result,
+		"pending_vn_sequence": pending_vn_sequence,
+		"pending_exploration_content": pending_exploration_content,
+	}
+
+
+func _install_candidate_session(candidate: Dictionary) -> void:
+	flags = candidate["flags"]
+	bonds = candidate["bonds"]
+	exploration_state = candidate["exploration_state"]
+	inventory_state = candidate["inventory_state"]
+	party_runtime_state = candidate["party_runtime_state"]
+	_money = candidate["money"]
+	_missable_content_warning_enabled = candidate["warning"]
+	pending_battle_context = {}
+	pending_battle_result = {}
+	pending_vn_sequence = ""
+	pending_exploration_content = {}
+
+
+func _restore_live_session(previous: Dictionary) -> void:
+	flags = previous["flags"]
+	bonds = previous["bonds"]
+	exploration_state = previous["exploration_state"]
+	inventory_state = previous["inventory_state"]
+	party_runtime_state = previous["party_runtime_state"]
+	_money = previous["money"]
+	_missable_content_warning_enabled = previous["warning"]
+	persistence_feedback = previous["persistence_feedback"]
+	pending_battle_context = previous["pending_battle_context"]
+	pending_battle_result = previous["pending_battle_result"]
+	pending_vn_sequence = previous["pending_vn_sequence"]
+	pending_exploration_content = previous["pending_exploration_content"]
+
+
+func _write_save_document(save_data: Dictionary) -> bool:
+	var serialized: String = JSON.stringify(save_data, "\t")
+	if serialized.is_empty():
+		return _report_persistence_error("Save data could not be serialized.")
+	var main_path: String = ProjectSettings.globalize_path(SAVE_PATH)
+	var temporary_path: String = main_path + ".tmp"
+	var backup_path: String = main_path + ".bak"
+	var directory: String = main_path.get_base_dir()
+	if DirAccess.make_dir_recursive_absolute(directory) != OK:
+		return _report_persistence_error("Save directory could not be created.")
+	if FileAccess.file_exists(backup_path):
+		return _report_persistence_error("A previous save backup needs recovery before writing again.")
+	var file: FileAccess = FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null:
+		return _report_persistence_error("Could not open temporary save file: %s" % error_string(FileAccess.get_open_error()))
+	file.store_string(serialized)
+	file.flush()
+	var write_error: Error = file.get_error()
+	file.close()
+	if write_error != OK:
+		return _report_persistence_error("Could not finish temporary save file: %s" % error_string(write_error))
+	var had_previous: bool = FileAccess.file_exists(main_path)
+	var old_moved := false
+	if had_previous:
+		old_moved = DirAccess.rename_absolute(main_path, backup_path) == OK
+		if not old_moved and DirAccess.copy_absolute(main_path, backup_path) != OK:
+			return _report_persistence_error("Previous save could not be protected before replacement.")
+	if old_moved or not had_previous:
+		var replace_error: Error = DirAccess.rename_absolute(temporary_path, main_path)
+		if replace_error != OK:
+			if old_moved and DirAccess.rename_absolute(backup_path, main_path) != OK:
+				return _report_persistence_error("Save replacement failed; prior save remains in the .bak file and needs recovery.")
+			return _report_persistence_error("Save replacement failed; prior save was preserved.")
+	else:
+		# Windows can deny rename while a legacy reader still holds the destination open.
+		# The validated temp and full backup exist before this guarded fallback.
+		var fallback: FileAccess = FileAccess.open(main_path, FileAccess.WRITE)
+		if fallback == null:
+			return _report_persistence_error("Save replacement failed; prior save was preserved.")
+		fallback.store_string(serialized)
+		fallback.flush()
+		var fallback_error: Error = fallback.get_error()
+		fallback.close()
+		if fallback_error != OK:
+			if DirAccess.copy_absolute(backup_path, main_path) != OK:
+				return _report_persistence_error("Save write failed; prior save remains in the .bak file and needs recovery.")
+			return _report_persistence_error("Save write failed; prior save was restored.")
+		DirAccess.remove_absolute(temporary_path)
+	if had_previous and DirAccess.remove_absolute(backup_path) != OK:
+		push_warning("A prior save backup remains at %s." % backup_path)
+	return true
 
 
 func _report_persistence_error(message: String) -> bool:

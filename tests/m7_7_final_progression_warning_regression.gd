@@ -390,6 +390,9 @@ func _test_real_control_input() -> void:
 	await process_frame
 	await _mouse_click(map.primary_action_button)
 	_check(map.warning_dialog_open, "INPUT: mouse Continue setup failed")
+	if not await _wait_for_warning_controls_layout(map):
+		_check(false, "INPUT: warning controls did not settle inside the viewport")
+		return
 	await _mouse_click(map.warning_continue_button)
 	_check(current_scene != null and current_scene.name == "M7_7ProgressionResult", "INPUT: mouse Continue did not reach result")
 	_check(state.is_context_closed(CONTEXT_ID), "INPUT: mouse Continue did not close context")
@@ -533,6 +536,19 @@ func _mouse_click(button: BaseButton) -> void:
 	released.global_position = center
 	Input.parse_input_event(released)
 	await process_frame
+
+
+func _wait_for_warning_controls_layout(map: Control) -> bool:
+	var panel: Control = map.get_node("WarningOverlay/WarningPanel")
+	var viewport_rect := Rect2(Vector2.ZERO, Vector2(root.size))
+	for attempt: int in range(12):
+		var panel_rect: Rect2 = panel.get_global_rect()
+		var continue_rect: Rect2 = map.warning_continue_button.get_global_rect()
+		var back_rect: Rect2 = map.warning_go_back_button.get_global_rect()
+		if viewport_rect.encloses(panel_rect) and panel_rect.encloses(continue_rect) and panel_rect.encloses(back_rect):
+			return true
+		await process_frame
+	return false
 
 
 func _check(condition: bool, message: String) -> void:

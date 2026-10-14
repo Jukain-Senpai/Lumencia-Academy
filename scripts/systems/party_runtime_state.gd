@@ -51,6 +51,42 @@ func get_hp_snapshot() -> Dictionary:
 	return snapshot
 
 
+func get_save_snapshot() -> Array:
+	var entries: Array = []
+	for definition: Dictionary in DEFAULT_MEMBERS:
+		var member: Dictionary = _members[definition["id"]]
+		entries.append({"member_id": definition["id"], "current_hp": member["current_hp"],
+			"max_hp": member["max_hp"]})
+	return entries
+
+
+func apply_save_snapshot(raw_entries: Variant) -> bool:
+	if typeof(raw_entries) != TYPE_ARRAY or raw_entries.size() != _members.size():
+		return false
+	var snapshot: Dictionary = {}
+	for raw_entry: Variant in raw_entries:
+		if typeof(raw_entry) != TYPE_DICTIONARY or raw_entry.size() != 3 or not raw_entry.has("member_id") or not raw_entry.has("current_hp") or not raw_entry.has("max_hp"):
+			return false
+		var member_id: Variant = raw_entry["member_id"]
+		if typeof(member_id) != TYPE_STRING or not has_member(member_id) or snapshot.has(member_id):
+			return false
+		var authored_max: int = _members[member_id]["max_hp"]
+		if not _is_save_hp(raw_entry["max_hp"], authored_max) or int(raw_entry["max_hp"]) != authored_max:
+			return false
+		if not _is_save_hp(raw_entry["current_hp"], authored_max):
+			return false
+		snapshot[member_id] = {"current_hp": int(raw_entry["current_hp"]), "max_hp": authored_max}
+	return apply_hp_snapshot(snapshot)
+
+
+func _is_save_hp(value: Variant, maximum: int) -> bool:
+	if typeof(value) == TYPE_INT:
+		return value >= 0 and value <= maximum
+	if typeof(value) != TYPE_FLOAT or is_nan(value) or is_inf(value):
+		return false
+	return value == floor(value) and value >= 0.0 and value <= float(maximum)
+
+
 func validate_battle_fixtures(fixtures: Array[Dictionary]) -> bool:
 	if fixtures.size() != _members.size():
 		return false

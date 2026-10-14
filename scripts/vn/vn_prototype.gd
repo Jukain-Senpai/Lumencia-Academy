@@ -71,6 +71,7 @@ var dialogue_ready := false
 var last_dialogue_error := ""
 var battle_launch_committed := false
 var exploration_return_committed := false
+var load_transition_committed := false
 var executed_reaction_effect_node_ids: Dictionary = {}
 
 
@@ -80,6 +81,7 @@ func _ready() -> void:
 	restart_button.pressed.connect(_restart_scene)
 	save_button.pressed.connect(_save_game)
 	load_button.pressed.connect(_load_game)
+	load_button.tooltip_text = "Load saved game (Ctrl+L)"
 	new_run_button.pressed.connect(_start_new_run)
 
 	var pending_sequence_id := GameState.get_pending_vn_sequence()
@@ -115,6 +117,12 @@ static func resolve_dialogue_sequence_path(sequence_id: String) -> String:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if load_transition_committed:
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.ctrl_pressed and event.keycode == KEY_L:
+		get_viewport().set_input_as_handled()
+		_load_game()
+		return
 	if (
 		battle_launch_committed
 		or exploration_return_committed
@@ -659,7 +667,7 @@ func _show_choices(choice: Dictionary) -> void:
 
 
 func _on_option_selected(option_index: int) -> void:
-	if not awaiting_choice:
+	if load_transition_committed or not awaiting_choice:
 		return
 
 	var choice: Dictionary = dialogue_nodes.get(current_node_id, {})
@@ -775,9 +783,14 @@ func _battle_result_matches(condition: Dictionary, result: Dictionary) -> bool:
 
 
 func _save_game() -> void:
+	if load_transition_committed:
+		return
 	_release_utility_focus()
 	if not _can_save_current_state():
-		save_status_label.text = "Save is available only on a normal dialogue line."
+		if not GameState.get_pending_exploration_content().is_empty() or _dialogue_requires_exploration_handoff(dialogue_nodes):
+			save_status_label.text = "Save at the Exploration map; this VN needs a return handoff."
+		else:
+			save_status_label.text = "Save is available only on a normal dialogue line."
 		_refresh_persistence_controls()
 		return
 
@@ -789,41 +802,67 @@ func _save_game() -> void:
 
 
 func _load_game() -> void:
+	if load_transition_committed:
+		return
 	var save_data := GameState.read_save_data()
 	if save_data.is_empty():
 		save_status_label.text = "Load failed: %s" % GameState.persistence_error
 		_refresh_persistence_controls()
 		return
-
-	var saved_sequence: String = save_data["sequence"]
-	var saved_node_id: String = save_data["node"]
-	if not KNOWN_DIALOGUE_PATHS.has(saved_sequence):
-		_report_save_load_error("Unknown saved dialogue sequence '%s'." % saved_sequence)
+	if save_data.has("schema_version"):
+		if GameState.load_versioned_save_data(save_data):
+			load_transition_committed = true
+			dialogue_ready = false
+			awaiting_choice = false
+			set_process_unhandled_input(false)
+			return
+		_report_save_load_error(GameState.persistence_error)
 		return
-
-	var dialogue_package := _read_and_validate_dialogue(saved_sequence)
+	var dialogue_package: Dictionary = prepare_legacy_save_data(save_data)
 	if dialogue_package.is_empty():
 		_report_save_load_error(last_dialogue_error)
 		return
-	var saved_nodes: Dictionary = dialogue_package["nodes"]
-	if not saved_nodes.has(saved_node_id):
-		_report_save_load_error(
-			"Saved dialogue node '%s' does not exist in %s." % [saved_node_id, saved_sequence]
-		)
-		return
-	var saved_node: Dictionary = saved_nodes[saved_node_id]
-	if saved_node["type"] != "line":
-		_report_save_load_error(
-			"Saved dialogue node '%s' is not a stable normal line." % saved_node_id
-		)
-		return
-
+	GameState.reset_state()
 	GameState.restore_from_save_data(save_data)
+	apply_legacy_save_data(save_data, dialogue_package)
+
+
+func prepare_legacy_save_data(save_data: Dictionary) -> Dictionary:
+	var saved_sequence: String = save_data.get("sequence", "")
+	var saved_node_id: String = save_data.get("node", "")
+	if not KNOWN_DIALOGUE_PATHS.has(saved_sequence):
+		last_dialogue_error = "Unknown saved dialogue sequence '%s'." % saved_sequence
+		return {}
+	var dialogue_package := _read_and_validate_dialogue(saved_sequence)
+	if dialogue_package.is_empty():
+		return {}
+	var saved_nodes: Dictionary = dialogue_package["nodes"]
+	if _dialogue_requires_exploration_handoff(saved_nodes):
+		last_dialogue_error = "This VN checkpoint requires an Exploration return handoff; load an Exploration map save instead."
+		return {}
+	if not saved_nodes.has(saved_node_id):
+		last_dialogue_error = "Saved dialogue node '%s' does not exist in %s." % [saved_node_id, saved_sequence]
+		return {}
+	if saved_nodes[saved_node_id]["type"] != "line":
+		last_dialogue_error = "Saved dialogue node '%s' is not a stable normal line." % saved_node_id
+		return {}
+	return dialogue_package
+
+
+func apply_legacy_save_data(save_data: Dictionary, dialogue_package: Dictionary) -> bool:
+	if not is_node_ready() or dialogue_package.is_empty():
+		return false
+	var saved_node_id: String = save_data["node"]
+	if not dialogue_package["nodes"].has(saved_node_id) or dialogue_package["nodes"][saved_node_id]["type"] != "line":
+		return false
+	var saved_node: Dictionary = dialogue_package["nodes"][saved_node_id]
 	_apply_dialogue_sequence(dialogue_package)
 	dialogue_ready = true
 	current_node_id = saved_node_id
 	awaiting_choice = false
 	scene_ended = false
+	battle_launch_committed = false
+	exploration_return_committed = false
 	_release_utility_focus()
 	_release_choice_focus()
 	choice_panel.hide()
@@ -838,6 +877,7 @@ func _load_game() -> void:
 	_show_line(saved_node)
 	save_status_label.text = "Game loaded."
 	_refresh_persistence_controls()
+	return true
 
 
 func _report_save_load_error(message: String) -> void:
@@ -850,8 +890,17 @@ func _report_save_load_error(message: String) -> void:
 func _can_save_current_state() -> bool:
 	if not dialogue_ready or awaiting_choice or scene_ended:
 		return false
+	if not GameState.get_pending_exploration_content().is_empty() or _dialogue_requires_exploration_handoff(dialogue_nodes):
+		return false
 	var current_node: Dictionary = dialogue_nodes.get(current_node_id, {})
 	return current_node.get("type", "") == "line"
+
+
+func _dialogue_requires_exploration_handoff(nodes: Dictionary) -> bool:
+	for node: Variant in nodes.values():
+		if node.get("type", "") == "return_to_exploration":
+			return true
+	return false
 
 
 func _refresh_persistence_controls() -> void:

@@ -40,6 +40,46 @@ func get_quantities() -> Dictionary:
 	return _quantities.duplicate(true)
 
 
+func get_save_snapshot() -> Array:
+	var entries: Array = []
+	for item_id: String in _quantities:
+		entries.append({"item_id": item_id, "quantity": _quantities[item_id]})
+	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["item_id"] < b["item_id"])
+	return entries
+
+
+func apply_save_snapshot(raw_entries: Variant) -> bool:
+	if typeof(raw_entries) != TYPE_ARRAY:
+		return false
+	var quantities: Dictionary = {}
+	for raw_entry: Variant in raw_entries:
+		if typeof(raw_entry) != TYPE_DICTIONARY or raw_entry.size() != 2 or not raw_entry.has("item_id") or not raw_entry.has("quantity"):
+			return false
+		var item_id: Variant = raw_entry["item_id"]
+		var quantity: Variant = raw_entry["quantity"]
+		if typeof(item_id) != TYPE_STRING or not has_definition(item_id) or quantities.has(item_id):
+			return false
+		if not _is_save_quantity(quantity):
+			return false
+		if int(quantity) > 0:
+			quantities[item_id] = int(quantity)
+		else:
+			quantities[item_id] = 0
+	_quantities.clear()
+	for item_id: String in quantities:
+		if quantities[item_id] > 0:
+			_quantities[item_id] = quantities[item_id]
+	return true
+
+
+func _is_save_quantity(value: Variant) -> bool:
+	if typeof(value) == TYPE_INT:
+		return value >= 0 and value <= STACK_CAP
+	if typeof(value) != TYPE_FLOAT or is_nan(value) or is_inf(value):
+		return false
+	return value == floor(value) and value >= 0.0 and value <= float(STACK_CAP)
+
+
 func gain_item(item_id: String, requested_quantity: int) -> Dictionary:
 	var result := {
 		"requested": requested_quantity,

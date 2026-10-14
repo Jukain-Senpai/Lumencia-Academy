@@ -30,6 +30,10 @@ const REUSABLE_TEAL := Color(0.48, 0.92, 0.84, 1.0)
 @onready var time_label: Label = %TimeLabel
 @onready var time_actions_label: Label = %TimeActionsLabel
 @onready var time_feedback_label: Label = %TimeFeedbackLabel
+@onready var save_load_panel: PanelContainer = %SaveLoadPanel
+@onready var map_save_button: Button = %MapSaveButton
+@onready var map_load_button: Button = %MapLoadButton
+@onready var save_load_status: Label = %SaveLoadStatus
 @onready var inventory_button: Button = %InventoryButton
 @onready var inventory_panel: PanelContainer = %InventoryPanel
 @onready var inventory_status: Label = %InventoryStatus
@@ -94,6 +98,9 @@ func _ready() -> void:
 	warning_preference_button.toggled.connect(_on_warning_preference_toggled)
 	warning_go_back_button.pressed.connect(_on_warning_go_back)
 	warning_continue_button.pressed.connect(_on_warning_continue)
+	map_save_button.pressed.connect(_on_map_save)
+	map_load_button.pressed.connect(_on_map_load)
+	save_load_status.text = GameState.persistence_feedback if not GameState.persistence_feedback.is_empty() else "Save / Load"
 	resized.connect(_on_resized)
 	call_deferred("refresh_map")
 
@@ -128,6 +135,8 @@ func refresh_map() -> bool:
 	_refresh_inventory_ui()
 	warning_preference_panel.visible = exploration_state.has_final_progression_node()
 	warning_preference_button.set_pressed_no_signal(GameState.is_missable_content_warning_enabled())
+	save_load_panel.visible = exploration_state.active_context_id == GameState.PROGRESSION_CONTEXT_ID
+	map_load_button.disabled = not GameState.has_save_file()
 	marker_layer.visible = true
 	diagnostic_panel.visible = false
 	return true
@@ -135,6 +144,21 @@ func refresh_map() -> bool:
 
 func get_marker_button(node_id: String) -> Button:
 	return marker_buttons.get(node_id) as Button
+
+
+func _on_map_save() -> void:
+	if GameState.save_exploration_game():
+		save_load_status.text = "Saved successfully."
+	else:
+		save_load_status.text = "Save failed: %s" % GameState.persistence_error
+	map_load_button.disabled = not GameState.has_save_file()
+
+
+func _on_map_load() -> void:
+	if GameState.load_saved_game():
+		return
+	save_load_status.text = "Load failed: %s" % GameState.persistence_error
+	map_load_button.disabled = not GameState.has_save_file()
 
 
 func _on_resized() -> void:

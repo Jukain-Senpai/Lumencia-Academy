@@ -1,4 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/exploration/progression_result.gd" id="1_controller"]
 
 [sub_resource type="StyleBoxFlat" id="Style_result"]
 bg_color = Color(0.065, 0.038, 0.09, 0.98)
@@ -21,6 +23,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("1_controller")
 
 [node name="Backdrop" type="ColorRect" parent="."]
 layout_mode = 1
@@ -72,3 +75,31 @@ theme_override_font_sizes/font_size = 20
 text = "The current exploration phase has ended.\nThe story would continue here."
 horizontal_alignment = 1
 autowrap_mode = 2
+
+[node name="SaveLoadButtons" type="HBoxContainer" parent="ResultPanel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ResultSaveButton" type="Button" parent="ResultPanel/Margin/Content/SaveLoadButtons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.9, 0.62, 1)
+text = "Save"
+
+[node name="ResultLoadButton" type="Button" parent="ResultPanel/Margin/Content/SaveLoadButtons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.9, 0.62, 1)
+text = "Load"
+
+[node name="ResultSaveLoadStatus" type="Label" parent="ResultPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.91, 0.9, 0.98, 1)
+theme_override_font_sizes/font_size = 16
+text = "Save / Load"
+horizontal_alignment = 1
