@@ -113,3 +113,24 @@ func heal_member(member_id: String, amount: int) -> Dictionary:
 	result["healed"] = member["current_hp"] - before
 	result["current_hp"] = member["current_hp"]
 	return result
+
+
+func recover_party_percent(percent: int) -> Dictionary:
+	var result := {"success": false, "hp_restored": 0, "members_revived": 0}
+	if percent <= 0 or percent > 100:
+		return result
+	var snapshot := get_hp_snapshot()
+	for member_id: String in snapshot:
+		var hp: Dictionary = snapshot[member_id]
+		var current_hp: int = hp["current_hp"]
+		var max_hp: int = hp["max_hp"]
+		var recovery := clampi(ceili(float(max_hp) * float(percent) / 100.0), 1, max_hp)
+		var new_hp := recovery if current_hp == 0 else mini(max_hp, current_hp + recovery)
+		hp["current_hp"] = new_hp
+		result["hp_restored"] += new_hp - current_hp
+		if current_hp == 0:
+			result["members_revived"] += 1
+	if not apply_hp_snapshot(snapshot):
+		return {"success": false, "hp_restored": 0, "members_revived": 0}
+	result["success"] = true
+	return result

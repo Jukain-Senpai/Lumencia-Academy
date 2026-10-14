@@ -26,6 +26,10 @@ const REUSABLE_TEAL := Color(0.48, 0.92, 0.84, 1.0)
 @onready var context_title: Label = %ContextTitle
 @onready var current_location_label: Label = %CurrentLocationLabel
 @onready var money_label: Label = %MoneyLabel
+@onready var time_panel: PanelContainer = %TimePanel
+@onready var time_label: Label = %TimeLabel
+@onready var time_actions_label: Label = %TimeActionsLabel
+@onready var time_feedback_label: Label = %TimeFeedbackLabel
 @onready var inventory_button: Button = %InventoryButton
 @onready var inventory_panel: PanelContainer = %InventoryPanel
 @onready var inventory_status: Label = %InventoryStatus
@@ -42,6 +46,9 @@ const REUSABLE_TEAL := Color(0.48, 0.92, 0.84, 1.0)
 @onready var shop_status_label: Label = %ShopStatusLabel
 @onready var shop_buy_button: Button = %ShopBuyButton
 @onready var shop_back_button: Button = %ShopBackButton
+@onready var hub_row: HBoxContainer = %HubRow
+@onready var camp_rest_button: Button = %CampRestButton
+@onready var wait_button: Button = %WaitButton
 @onready var diagnostic_panel: PanelContainer = %DiagnosticPanel
 @onready var diagnostic_label: Label = %DiagnosticLabel
 
@@ -56,6 +63,10 @@ var inventory_feedback := ""
 var shop_feedback := "Buy one item at a time."
 var shop_purchase_in_progress := false
 var shop_opened_at_node_id := ""
+var hub_rendered_node_id := ""
+var hub_activation_in_progress := false
+var hub_feedback := ""
+var hub_feedback_node_id := ""
 
 
 func _ready() -> void:
@@ -67,6 +78,8 @@ func _ready() -> void:
 	shop_action_button.pressed.connect(_open_shop)
 	shop_buy_button.pressed.connect(_buy_shop_item)
 	shop_back_button.pressed.connect(_close_shop)
+	camp_rest_button.pressed.connect(_use_camp_rest)
+	wait_button.pressed.connect(_wait_at_hub)
 	resized.connect(_on_resized)
 	call_deferred("refresh_map")
 
@@ -91,6 +104,7 @@ func refresh_map() -> bool:
 	var current_definition: Dictionary = exploration_state.get_node_definition(exploration_state.current_node_id)
 	current_location_label.text = "Current: %s" % current_definition["display_name"]
 	money_label.text = "Money: %d" % GameState.get_money()
+	_refresh_time_ui()
 	_sync_marker_controls(node_definitions)
 	_update_marker_positions(node_definitions)
 	_refresh_primary_action(current_definition)
@@ -120,6 +134,8 @@ func _on_marker_pressed(node_id: String) -> void:
 	if exploration_state.move_to_node(node_id):
 		last_interaction_feedback = ""
 		feedback_node_id = ""
+		hub_feedback = ""
+		hub_feedback_node_id = ""
 		shop_panel.hide()
 		shop_opened_at_node_id = ""
 	refresh_map()
@@ -308,11 +324,14 @@ func _get_primary_content_validation_error(node_definition: Dictionary) -> Strin
 		return "Current node primary content has no valid id."
 	if not ["vn_event", "battle", "resource"].has(primary_content["type"]):
 		return "Unsupported primary content type '%s'." % primary_content["type"]
+	var has_action_cost := primary_content.has("action_cost")
+	if has_action_cost and (typeof(primary_content["action_cost"]) != TYPE_INT or not [0, 1].has(primary_content["action_cost"])):
+		return "Current node primary content has an invalid action cost."
 	if primary_content["type"] != "resource":
-		if primary_content.keys().size() != 2:
+		if primary_content.keys().size() != 2 + int(has_action_cost):
 			return "Current node primary content has unexpected fields."
 		return ""
-	if primary_content.keys().size() != 3:
+	if primary_content.keys().size() != 3 + int(has_action_cost):
 		return "Resource primary content requires one item reward."
 	var raw_reward: Variant = primary_content.get("reward")
 	if typeof(raw_reward) != TYPE_DICTIONARY:
@@ -427,16 +446,37 @@ func _use_healing_herb_in_exploration(member_id: String) -> bool:
 
 func _refresh_hub_action(node_definition: Dictionary) -> void:
 	var shop_action := _get_shop_action(node_definition)
+	var rest_action := _get_hub_action(node_definition, "rest")
+	var wait_action := _get_hub_action(node_definition, "wait")
+	hub_rendered_node_id = node_definition.get("id", "")
 	shop_action_button.visible = not shop_action.is_empty()
 	shop_action_button.disabled = shop_action.is_empty()
 	if shop_action.is_empty():
 		shop_panel.hide()
 		shop_opened_at_node_id = ""
-		return
-	shop_action_button.text = shop_action.get("display_name", "Shop")
-	if not primary_action_panel.visible:
+	else:
+		shop_action_button.text = shop_action.get("display_name", "Shop")
+	camp_rest_button.visible = not rest_action.is_empty()
+	wait_button.visible = not wait_action.is_empty()
+	hub_row.visible = camp_rest_button.visible or wait_button.visible
+	if camp_rest_button.visible:
+		var remaining: int = exploration_state.get_hub_action_uses_remaining(
+			hub_rendered_node_id, rest_action["id"]
+		)
+		camp_rest_button.text = "%s · %d left" % [rest_action["display_name"], remaining]
+		camp_rest_button.disabled = remaining <= 0 or hub_activation_in_progress
+		camp_rest_button.tooltip_text = (
+			"Rest uses exhausted." if remaining <= 0 else "Restore 50% Max HP to the party."
+		)
+	if wait_button.visible:
+		wait_button.text = wait_action["display_name"]
+		wait_button.disabled = hub_activation_in_progress
+	if not shop_action.is_empty() or hub_row.visible:
 		primary_action_panel.show()
-		primary_action_status.text = "Shop available here."
+		if not primary_action_button.visible:
+			primary_action_status.text = "Location actions available."
+	if hub_feedback_node_id == hub_rendered_node_id and not hub_feedback.is_empty():
+		primary_action_status.text = hub_feedback
 	if shop_panel.visible:
 		if shop_opened_at_node_id != exploration_state.current_node_id:
 			shop_panel.hide()
@@ -446,13 +486,64 @@ func _refresh_hub_action(node_definition: Dictionary) -> void:
 
 
 func _get_shop_action(node_definition: Dictionary) -> Dictionary:
+	return _get_hub_action(node_definition, "shop")
+
+
+func _get_hub_action(node_definition: Dictionary, action_type: String) -> Dictionary:
 	var raw_actions: Variant = node_definition.get("hub_actions", [])
 	if typeof(raw_actions) != TYPE_ARRAY:
 		return {}
 	for raw_action: Variant in raw_actions:
-		if typeof(raw_action) == TYPE_DICTIONARY and raw_action.get("type") == "shop":
+		if typeof(raw_action) == TYPE_DICTIONARY and raw_action.get("type") == action_type:
 			return raw_action
 	return {}
+
+
+func _refresh_time_ui() -> void:
+	var snapshot: Dictionary = exploration_state.get_time_snapshot()
+	time_panel.visible = snapshot.get("mode") != "NO_TIME"
+	if not time_panel.visible:
+		return
+	time_label.text = "Day %d — %s" % [snapshot["day"], snapshot["daypart"]]
+	time_actions_label.text = "Actions: %d/2" % snapshot["actions_spent"]
+	time_feedback_label.text = snapshot["feedback"]
+	time_feedback_label.visible = not snapshot["feedback"].is_empty()
+
+
+func _use_camp_rest() -> void:
+	if hub_activation_in_progress or not camp_rest_button.visible or camp_rest_button.disabled:
+		return
+	hub_activation_in_progress = true
+	call_deferred("_clear_hub_activation_guard")
+	var node_definition: Dictionary = exploration_state.get_node_definition(hub_rendered_node_id)
+	var rest_action := _get_hub_action(node_definition, "rest")
+	var result: Dictionary = GameState.use_current_camp_rest(
+		hub_rendered_node_id, rest_action.get("id", "")
+	)
+	hub_feedback = result["message"]
+	hub_feedback_node_id = hub_rendered_node_id
+	refresh_map()
+
+
+func _wait_at_hub() -> void:
+	if hub_activation_in_progress or not wait_button.visible or wait_button.disabled:
+		return
+	hub_activation_in_progress = true
+	call_deferred("_clear_hub_activation_guard")
+	var node_definition: Dictionary = exploration_state.get_node_definition(hub_rendered_node_id)
+	var wait_action := _get_hub_action(node_definition, "wait")
+	var result: Dictionary = GameState.wait_at_current_hub(
+		hub_rendered_node_id, wait_action.get("id", "")
+	)
+	hub_feedback = result["message"]
+	hub_feedback_node_id = hub_rendered_node_id
+	refresh_map()
+
+
+func _clear_hub_activation_guard() -> void:
+	hub_activation_in_progress = false
+	if is_node_ready():
+		refresh_map()
 
 
 func _open_shop() -> void:
@@ -756,6 +847,8 @@ func _show_diagnostic(message: String) -> bool:
 	marker_layer.visible = false
 	shop_panel.hide()
 	shop_action_button.hide()
+	hub_row.hide()
+	time_panel.hide()
 	diagnostic_label.text = message
 	diagnostic_panel.visible = true
 	return false

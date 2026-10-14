@@ -164,6 +164,51 @@ theme_override_colors/font_color = Color(1, 0.9, 0.62, 1)
 theme_override_font_sizes/font_size = 16
 text = "Items · Healing Herb ×0"
 
+[node name="TimePanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+offset_left = 24.0
+offset_top = 98.0
+offset_right = 300.0
+offset_bottom = 176.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_legend")
+
+[node name="Margin" type="MarginContainer" parent="TimePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 8
+
+[node name="Content" type="VBoxContainer" parent="TimePanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="TimeLabel" type="Label" parent="TimePanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.99, 0.84, 0.47, 1)
+theme_override_font_sizes/font_size = 17
+text = "Day 1 — Morning"
+
+[node name="TimeActionsLabel" type="Label" parent="TimePanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.93, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "Actions: 0/2"
+
+[node name="TimeFeedbackLabel" type="Label" parent="TimePanel/Margin/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 1, 0.93, 1)
+theme_override_font_sizes/font_size = 13
+text = "Night Rest: party recovered HP."
+autowrap_mode = 2
+
 [node name="LegendPanel" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 3
@@ -235,24 +280,56 @@ theme_override_font_sizes/font_size = 16
 text = "Location interaction available."
 autowrap_mode = 2
 
-[node name="PrimaryActionButton" type="Button" parent="PrimaryActionPanel/Margin/Content"]
+[node name="ActionRow" type="HBoxContainer" parent="PrimaryActionPanel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PrimaryActionButton" type="Button" parent="PrimaryActionPanel/Margin/Content/ActionRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
+size_flags_horizontal = 3
 focus_neighbor_top = NodePath(".")
 focus_neighbor_bottom = NodePath(".")
 theme_override_colors/font_color = Color(1, 0.92, 0.67, 1)
 theme_override_font_sizes/font_size = 18
 text = "Interact"
 
-[node name="ShopActionButton" type="Button" parent="PrimaryActionPanel/Margin/Content"]
+[node name="ShopActionButton" type="Button" parent="PrimaryActionPanel/Margin/Content/ActionRow"]
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.82, 1, 0.93, 1)
 theme_override_font_sizes/font_size = 18
 text = "Shop"
+
+[node name="HubRow" type="HBoxContainer" parent="PrimaryActionPanel/Margin/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CampRestButton" type="Button" parent="PrimaryActionPanel/Margin/Content/HubRow"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.82, 1, 0.93, 1)
+theme_override_font_sizes/font_size = 15
+text = "Camp Rest · 2 left"
+
+[node name="WaitButton" type="Button" parent="PrimaryActionPanel/Margin/Content/HubRow"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.99, 0.84, 0.47, 1)
+theme_override_font_sizes/font_size = 15
+text = "Wait / Advance Time"
 
 [node name="InventoryPanel" type="PanelContainer" parent="."]
 unique_name_in_owner = true

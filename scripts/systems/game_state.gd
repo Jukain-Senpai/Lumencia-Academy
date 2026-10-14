@@ -137,6 +137,91 @@ func buy_from_current_shop(expected_node_id: String, action_id: String, item_id:
 	return result
 
 
+func use_current_camp_rest(expected_node_id: String, action_id: String) -> Dictionary:
+	var result := {"success": false, "message": "Camp Rest unavailable.",
+		"uses_remaining": exploration_state.get_hub_action_uses_remaining(expected_node_id, action_id),
+		"hp_restored": 0, "members_revived": 0, "time_result": {}}
+	var action := _get_current_hub_action(expected_node_id, action_id, "rest")
+	if action.is_empty() or not exploration_state.can_spend_timed_action():
+		return result
+	if result["uses_remaining"] <= 0:
+		result["message"] = "No Camp Rest uses remain."
+		return result
+	var hp_before: Dictionary = party_runtime_state.get_hp_snapshot()
+	var recovery: Dictionary = party_runtime_state.recover_party_percent(50)
+	if not recovery["success"]:
+		result["message"] = "Camp Rest recovery failed."
+		return result
+	if not exploration_state.consume_hub_action_use(expected_node_id, action_id):
+		party_runtime_state.apply_hp_snapshot(hp_before)
+		return result
+	var time_result := _charge_exploration_action()
+	result["success"] = true
+	result["message"] = "Camp Rest: party recovered HP."
+	result["uses_remaining"] = exploration_state.get_hub_action_uses_remaining(expected_node_id, action_id)
+	result["hp_restored"] = recovery["hp_restored"]
+	result["members_revived"] = recovery["members_revived"]
+	result["time_result"] = time_result
+	return result
+
+
+func wait_at_current_hub(expected_node_id: String, action_id: String) -> Dictionary:
+	var result := {"success": false, "message": "Wait unavailable.", "time_result": {}}
+	if (
+		_get_current_hub_action(expected_node_id, action_id, "wait").is_empty()
+		or exploration_state.time_mode == ExplorationStateModel.NO_TIME
+		or not exploration_state.can_spend_timed_action()
+	):
+		return result
+	var time_result := _charge_exploration_action()
+	result["success"] = time_result["success"]
+	result["message"] = "One action passed." if result["success"] else "Wait could not advance time."
+	result["time_result"] = time_result
+	return result
+
+
+func _get_current_hub_action(expected_node_id: String, action_id: String, action_type: String) -> Dictionary:
+	if (
+		expected_node_id.is_empty()
+		or action_id.is_empty()
+		or not exploration_state.has_active_context()
+		or exploration_state.current_node_id != expected_node_id
+		or not exploration_state.has_node(expected_node_id)
+	):
+		return {}
+	var node_definition: Dictionary = exploration_state.get_node_definition(expected_node_id)
+	if not node_definition.get("reusable", false):
+		return {}
+	for raw_action: Variant in node_definition.get("hub_actions", []):
+		if raw_action.get("id") == action_id and raw_action.get("type") == action_type:
+			return raw_action
+	return {}
+
+
+func _charge_exploration_action() -> Dictionary:
+	var time_result: Dictionary = exploration_state.spend_timed_action()
+	if not time_result["success"]:
+		return time_result
+	if time_result["night_rest_due"]:
+		var recovery: Dictionary = party_runtime_state.recover_party_percent(20)
+		if not recovery["success"]:
+			push_error("Night Rest could not recover PartyRuntimeState.")
+		else:
+			time_result["night_recovery"] = recovery
+	if time_result["day_boundary"]:
+		if not exploration_state.finish_day_transition():
+			push_error("Exploration day transition could not finish.")
+			time_result["success"] = false
+			return time_result
+		if time_result["night_rest_due"]:
+			exploration_state.set_time_feedback("Night Rest: The party recovered HP.")
+		else:
+			exploration_state.set_time_feedback("Day %d — Morning" % exploration_state.day_number)
+	elif time_result["charged"]:
+		exploration_state.set_time_feedback("")
+	return time_result
+
+
 func use_item_in_exploration(item_id: String, member_id: String) -> Dictionary:
 	var result := {
 		"success": false,
@@ -285,7 +370,15 @@ func resolve_pending_exploration_content(
 	var node_id: String = pending_exploration_content["node_id"]
 	if exploration_state.is_node_completed(node_id):
 		return true
-	return exploration_state.complete_primary_content(node_id)
+	var node_definition: Dictionary = exploration_state.get_node_definition(node_id)
+	var action_cost: int = node_definition["primary_content"].get("action_cost", 1)
+	if action_cost > 0 and not exploration_state.can_spend_timed_action():
+		return false
+	if not exploration_state.complete_primary_content(node_id):
+		return false
+	if action_cost == 0:
+		return true
+	return _charge_exploration_action()["success"]
 
 
 func clear_pending_exploration_content() -> void:
