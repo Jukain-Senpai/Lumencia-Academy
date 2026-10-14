@@ -246,9 +246,12 @@ func _only_expected_map_buttons_exist() -> bool:
 	var all_buttons: Array[Node] = prototype_scene.find_children("*", "Button", true, false)
 	var expected_utility_buttons := [
 		map_controller.get_node("PrimaryActionPanel/Margin/Content/PrimaryActionButton"),
+		map_controller.get_node("PrimaryActionPanel/Margin/Content/ShopActionButton"),
 		map_controller.get_node("HeaderPanel/Margin/Header/InventoryButton"),
 		map_controller.get_node("InventoryPanel/Margin/Content/HealingHerbButton"),
 		map_controller.get_node("InventoryPanel/Margin/Content/InventoryBackButton"),
+		map_controller.get_node("ShopPanel/Margin/Content/ShopBuyButton"),
+		map_controller.get_node("ShopPanel/Margin/Content/ShopBackButton"),
 	]
 	if all_buttons.size() != map_controller.marker_buttons.size() + expected_utility_buttons.size():
 		return false

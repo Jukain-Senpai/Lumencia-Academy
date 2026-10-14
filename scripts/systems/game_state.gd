@@ -6,6 +6,7 @@ const InventoryStateModel := preload("res://scripts/systems/inventory_state.gd")
 const PartyRuntimeStateModel := preload("res://scripts/systems/party_runtime_state.gd")
 const ItemCatalogModel := preload("res://scripts/systems/item_catalog.gd")
 const EXPLORATION_CONTENT_TYPES := ["vn_event", "battle", "resource"]
+const MAX_MONEY := 9223372036854775807
 
 var flags: Dictionary = {}
 var bonds: Dictionary = {}
@@ -17,6 +18,7 @@ var persistence_error := ""
 var exploration_state := ExplorationStateModel.new()
 var inventory_state := InventoryStateModel.new()
 var party_runtime_state := PartyRuntimeStateModel.new()
+var _money := 0
 
 
 func set_flag(flag_name: String, value: bool) -> void:
@@ -51,6 +53,88 @@ func reset_state() -> void:
 	exploration_state.clear_runtime()
 	inventory_state.clear()
 	party_runtime_state.reset()
+	_money = 0
+
+
+func get_money() -> int:
+	return _money
+
+
+func gain_money(amount: int) -> bool:
+	if amount <= 0 or amount > MAX_MONEY - _money:
+		return false
+	_money += amount
+	return true
+
+
+func spend_money(amount: int) -> bool:
+	if amount <= 0 or amount > _money:
+		return false
+	_money -= amount
+	return true
+
+
+func buy_from_current_shop(expected_node_id: String, action_id: String, item_id: String) -> Dictionary:
+	var result := {"success": false, "message": "Shop unavailable.", "money": _money,
+		"quantity": inventory_state.get_quantity(item_id)}
+	if (
+		expected_node_id.is_empty()
+		or action_id.is_empty()
+		or item_id.is_empty()
+		or not exploration_state.has_active_context()
+		or exploration_state.current_node_id != expected_node_id
+		or not exploration_state.has_node(expected_node_id)
+	):
+		return result
+	var node_definition: Dictionary = exploration_state.get_node_definition(expected_node_id)
+	if not node_definition.get("reusable", false):
+		return result
+	var raw_actions: Variant = node_definition.get("hub_actions")
+	if typeof(raw_actions) != TYPE_ARRAY:
+		return result
+	var offer: Dictionary = {}
+	for raw_action: Variant in raw_actions:
+		if typeof(raw_action) != TYPE_DICTIONARY:
+			return result
+		var action: Dictionary = raw_action
+		if action.get("id") != action_id:
+			continue
+		if action.get("type") != "shop" or typeof(action.get("catalog")) != TYPE_ARRAY:
+			return result
+		for raw_offer: Variant in action["catalog"]:
+			if typeof(raw_offer) != TYPE_DICTIONARY:
+				return result
+			if raw_offer.get("item_id") == item_id:
+				offer = raw_offer
+				break
+		break
+	if offer.is_empty():
+		return result
+	var price: Variant = offer.get("price")
+	if typeof(price) != TYPE_INT or price <= 0:
+		result["message"] = "Shop price is invalid."
+		return result
+	if inventory_state.get_item_definition(item_id).is_empty():
+		result["message"] = "Shop item is unknown."
+		return result
+	if inventory_state.get_quantity(item_id) >= InventoryStateModel.STACK_CAP:
+		result["message"] = "Inventory full."
+		return result
+	if _money < price:
+		result["message"] = "Not enough money."
+		return result
+	if not spend_money(price):
+		return result
+	var gain_result: Dictionary = inventory_state.gain_item(item_id, 1)
+	if gain_result.get("accepted") != 1:
+		gain_money(price)
+		result["message"] = "Purchase could not complete."
+		return result
+	result["success"] = true
+	result["message"] = "Purchased %s." % inventory_state.get_item_definition(item_id)["display_name"]
+	result["money"] = _money
+	result["quantity"] = inventory_state.get_quantity(item_id)
+	return result
 
 
 func use_item_in_exploration(item_id: String, member_id: String) -> Dictionary:

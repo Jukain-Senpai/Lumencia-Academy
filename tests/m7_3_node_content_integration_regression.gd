@@ -140,7 +140,7 @@ func _test_vn_loop() -> void:
 	_check(state.is_node_roadblocked("riverside_camp"), "VN: completion cleared roadblock fact")
 	_check(state.is_node_reusable("riverside_camp"), "VN: completion cleared authored reusable fact")
 	_check(map.get_marker_button("deep_grove") != null, "VN: revealed marker did not render after return")
-	_check(not map.primary_action_panel.visible, "VN: completed content remains interactable")
+	_check(not map.primary_action_button.visible and map.shop_action_button.visible, "VN: completed primary content replayed or independent Shop disappeared")
 
 	var completion_before: Dictionary = state.completed_nodes.duplicate(true)
 	var reveal_before: Dictionary = state.revealed_nodes.duplicate(true)

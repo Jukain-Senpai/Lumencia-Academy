@@ -224,6 +224,45 @@ func _is_valid_node_shape(node_definition: Dictionary) -> bool:
 	for bool_field: String in ["initially_revealed", "reusable", "initial_roadblock"]:
 		if not node_definition.has(bool_field) or typeof(node_definition[bool_field]) != TYPE_BOOL:
 			return false
+	if node_definition.has("hub_actions"):
+		if not node_definition["reusable"] or not _is_valid_hub_actions(node_definition["hub_actions"]):
+			return false
+	return true
+
+
+func _is_valid_hub_actions(raw_actions: Variant) -> bool:
+	if typeof(raw_actions) != TYPE_ARRAY:
+		return false
+	var action_ids: Dictionary = {}
+	for raw_action: Variant in raw_actions:
+		if typeof(raw_action) != TYPE_DICTIONARY:
+			return false
+		var action: Dictionary = raw_action
+		if (
+			action.keys().size() != 4
+			or not _has_non_empty_string(action, "id")
+			or action_ids.has(action["id"])
+			or action.get("type") != "shop"
+			or not _has_non_empty_string(action, "display_name")
+			or typeof(action.get("catalog")) != TYPE_ARRAY
+			or action["catalog"].is_empty()
+		):
+			return false
+		action_ids[action["id"]] = true
+		var offer_ids: Dictionary = {}
+		for raw_offer: Variant in action["catalog"]:
+			if typeof(raw_offer) != TYPE_DICTIONARY:
+				return false
+			var offer: Dictionary = raw_offer
+			if (
+				offer.keys().size() != 2
+				or not _has_non_empty_string(offer, "item_id")
+				or offer_ids.has(offer["item_id"])
+				or typeof(offer.get("price")) != TYPE_INT
+				or int(offer["price"]) <= 0
+			):
+				return false
+			offer_ids[offer["item_id"]] = true
 	return true
 
 

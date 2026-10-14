@@ -3,6 +3,7 @@ extends Control
 
 const VNPrototypeModel := preload("res://scripts/vn/vn_prototype.gd")
 const ItemCatalogModel := preload("res://scripts/systems/item_catalog.gd")
+const InventoryStateModel := preload("res://scripts/systems/inventory_state.gd")
 const MARKER_SIZE := Vector2(164.0, 64.0)
 const VN_SCENE_PATH := "res://scenes/vn/vn_prototype.tscn"
 const BATTLE_SCENE_PATH := "res://scenes/battle/battle_sandbox.tscn"
@@ -24,6 +25,7 @@ const REUSABLE_TEAL := Color(0.48, 0.92, 0.84, 1.0)
 @onready var marker_layer: Control = %MarkerLayer
 @onready var context_title: Label = %ContextTitle
 @onready var current_location_label: Label = %CurrentLocationLabel
+@onready var money_label: Label = %MoneyLabel
 @onready var inventory_button: Button = %InventoryButton
 @onready var inventory_panel: PanelContainer = %InventoryPanel
 @onready var inventory_status: Label = %InventoryStatus
@@ -33,6 +35,13 @@ const REUSABLE_TEAL := Color(0.48, 0.92, 0.84, 1.0)
 @onready var primary_action_panel: PanelContainer = %PrimaryActionPanel
 @onready var primary_action_status: Label = %PrimaryActionStatus
 @onready var primary_action_button: Button = %PrimaryActionButton
+@onready var shop_action_button: Button = %ShopActionButton
+@onready var shop_panel: PanelContainer = %ShopPanel
+@onready var shop_balance_label: Label = %ShopBalanceLabel
+@onready var shop_offer_label: Label = %ShopOfferLabel
+@onready var shop_status_label: Label = %ShopStatusLabel
+@onready var shop_buy_button: Button = %ShopBuyButton
+@onready var shop_back_button: Button = %ShopBackButton
 @onready var diagnostic_panel: PanelContainer = %DiagnosticPanel
 @onready var diagnostic_label: Label = %DiagnosticLabel
 
@@ -44,6 +53,9 @@ var last_interaction_feedback := ""
 var feedback_node_id := ""
 var inventory_item_selected := false
 var inventory_feedback := ""
+var shop_feedback := "Buy one item at a time."
+var shop_purchase_in_progress := false
+var shop_opened_at_node_id := ""
 
 
 func _ready() -> void:
@@ -52,6 +64,9 @@ func _ready() -> void:
 	inventory_button.pressed.connect(_toggle_inventory_panel)
 	healing_herb_button.pressed.connect(_select_healing_herb)
 	inventory_back_button.pressed.connect(_back_inventory_panel)
+	shop_action_button.pressed.connect(_open_shop)
+	shop_buy_button.pressed.connect(_buy_shop_item)
+	shop_back_button.pressed.connect(_close_shop)
 	resized.connect(_on_resized)
 	call_deferred("refresh_map")
 
@@ -75,9 +90,11 @@ func refresh_map() -> bool:
 	context_title.text = context_definition["display_name"]
 	var current_definition: Dictionary = exploration_state.get_node_definition(exploration_state.current_node_id)
 	current_location_label.text = "Current: %s" % current_definition["display_name"]
+	money_label.text = "Money: %d" % GameState.get_money()
 	_sync_marker_controls(node_definitions)
 	_update_marker_positions(node_definitions)
 	_refresh_primary_action(current_definition)
+	_refresh_hub_action(current_definition)
 	_refresh_inventory_ui()
 	marker_layer.visible = true
 	diagnostic_panel.visible = false
@@ -103,6 +120,8 @@ func _on_marker_pressed(node_id: String) -> void:
 	if exploration_state.move_to_node(node_id):
 		last_interaction_feedback = ""
 		feedback_node_id = ""
+		shop_panel.hide()
+		shop_opened_at_node_id = ""
 	refresh_map()
 
 
@@ -325,6 +344,8 @@ func _show_interaction_error(message: String) -> bool:
 func _toggle_inventory_panel() -> void:
 	inventory_panel.visible = not inventory_panel.visible
 	if inventory_panel.visible:
+		shop_panel.hide()
+		shop_opened_at_node_id = ""
 		inventory_item_selected = false
 		inventory_feedback = "Choose an item."
 	_refresh_inventory_ui()
@@ -402,6 +423,124 @@ func _use_healing_herb_in_exploration(member_id: String) -> bool:
 	]
 	_refresh_inventory_ui()
 	return true
+
+
+func _refresh_hub_action(node_definition: Dictionary) -> void:
+	var shop_action := _get_shop_action(node_definition)
+	shop_action_button.visible = not shop_action.is_empty()
+	shop_action_button.disabled = shop_action.is_empty()
+	if shop_action.is_empty():
+		shop_panel.hide()
+		shop_opened_at_node_id = ""
+		return
+	shop_action_button.text = shop_action.get("display_name", "Shop")
+	if not primary_action_panel.visible:
+		primary_action_panel.show()
+		primary_action_status.text = "Shop available here."
+	if shop_panel.visible:
+		if shop_opened_at_node_id != exploration_state.current_node_id:
+			shop_panel.hide()
+			shop_opened_at_node_id = ""
+		else:
+			_refresh_shop_ui(shop_action)
+
+
+func _get_shop_action(node_definition: Dictionary) -> Dictionary:
+	var raw_actions: Variant = node_definition.get("hub_actions", [])
+	if typeof(raw_actions) != TYPE_ARRAY:
+		return {}
+	for raw_action: Variant in raw_actions:
+		if typeof(raw_action) == TYPE_DICTIONARY and raw_action.get("type") == "shop":
+			return raw_action
+	return {}
+
+
+func _open_shop() -> void:
+	if not exploration_state.has_active_context():
+		return
+	var node_definition: Dictionary = exploration_state.get_node_definition(
+		exploration_state.current_node_id
+	)
+	var shop_action := _get_shop_action(node_definition)
+	if shop_action.is_empty():
+		refresh_map()
+		return
+	inventory_panel.hide()
+	shop_opened_at_node_id = exploration_state.current_node_id
+	shop_feedback = "Buy one item at a time."
+	shop_panel.show()
+	_refresh_shop_ui(shop_action)
+	shop_buy_button.grab_focus()
+
+
+func _buy_shop_item() -> void:
+	if shop_purchase_in_progress or not shop_panel.visible:
+		return
+	shop_purchase_in_progress = true
+	call_deferred("_clear_shop_purchase_guard")
+	var node_definition: Dictionary = exploration_state.get_node_definition(
+		shop_opened_at_node_id
+	)
+	var shop_action := _get_shop_action(node_definition)
+	var catalog: Array = shop_action.get("catalog", [])
+	if catalog.is_empty():
+		shop_feedback = "Shop offer is unavailable."
+		refresh_map()
+		return
+	var item_id: String = catalog[0].get("item_id", "")
+	var result: Dictionary = GameState.buy_from_current_shop(
+		shop_opened_at_node_id,
+		shop_action.get("id", ""),
+		item_id
+	)
+	shop_feedback = result["message"]
+	refresh_map()
+
+
+func _clear_shop_purchase_guard() -> void:
+	shop_purchase_in_progress = false
+	if shop_panel.visible:
+		refresh_map()
+
+
+func _close_shop() -> void:
+	shop_panel.hide()
+	shop_opened_at_node_id = ""
+	shop_action_button.grab_focus()
+
+
+func _refresh_shop_ui(shop_action: Dictionary) -> void:
+	var catalog: Array = shop_action.get("catalog", [])
+	if catalog.is_empty():
+		shop_panel.hide()
+		_show_diagnostic("Shop has no authored offer.")
+		return
+	var offer: Dictionary = catalog[0]
+	var item_id: String = offer.get("item_id", "")
+	var item_definition: Dictionary = GameState.inventory_state.get_item_definition(item_id)
+	if item_definition.is_empty():
+		shop_panel.hide()
+		_show_diagnostic("Shop references unknown item '%s'." % item_id)
+		return
+	var quantity: int = GameState.inventory_state.get_quantity(item_id)
+	var price: int = offer.get("price", 0)
+	shop_balance_label.text = "Money: %d" % GameState.get_money()
+	shop_offer_label.text = "%s · %d money · Owned %d/%d" % [
+		item_definition["display_name"], price, quantity, InventoryStateModel.STACK_CAP,
+	]
+	shop_status_label.text = shop_feedback
+	shop_buy_button.text = "Buy %s" % item_definition["display_name"]
+	shop_buy_button.disabled = (
+		quantity >= InventoryStateModel.STACK_CAP
+		or GameState.get_money() < price
+		or shop_purchase_in_progress
+	)
+	if quantity >= InventoryStateModel.STACK_CAP:
+		shop_buy_button.tooltip_text = "Inventory full."
+	elif GameState.get_money() < price:
+		shop_buy_button.tooltip_text = "Not enough money."
+	else:
+		shop_buy_button.tooltip_text = "Buy one %s for %d money." % [item_definition["display_name"], price]
 
 
 func _sync_marker_controls(node_definitions: Array) -> void:
@@ -604,11 +743,19 @@ func _get_presentation_validation_error(context_definition: Dictionary, node_def
 			or map_position.y > 1.0
 		):
 			return "Exploration node '%s' has an invalid normalized map position." % node_id
+		var shop_action := _get_shop_action(node_definition)
+		if not shop_action.is_empty():
+			var catalog: Array = shop_action.get("catalog", [])
+			for raw_offer: Variant in catalog:
+				if GameState.inventory_state.get_item_definition(raw_offer.get("item_id", "")).is_empty():
+					return "Exploration node '%s' has an unknown Shop item." % node_id
 	return ""
 
 
 func _show_diagnostic(message: String) -> bool:
 	marker_layer.visible = false
+	shop_panel.hide()
+	shop_action_button.hide()
 	diagnostic_label.text = message
 	diagnostic_panel.visible = true
 	return false

@@ -24,6 +24,12 @@ const PROTOTYPE_CONTEXT := {
 			"reveal_on_complete": ["deep_grove"],
 			"reusable": true,
 			"initial_roadblock": true,
+			"hub_actions": [{
+				"id": "prototype_supply_shop",
+				"type": "shop",
+				"display_name": "Shop",
+				"catalog": [{"item_id": "healing_herb", "price": 4}],
+			}],
 			"primary_content": {
 				"type": "vn_event",
 				"id": "m7_3_riverside_event",

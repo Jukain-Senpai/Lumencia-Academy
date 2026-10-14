@@ -146,6 +146,16 @@ theme_override_font_sizes/font_size = 20
 text = "Current: —"
 vertical_alignment = 1
 
+[node name="MoneyLabel" type="Label" parent="HeaderPanel/Margin/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.99, 0.84, 0.47, 1)
+theme_override_colors/font_outline_color = Color(0.08, 0.04, 0.1, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 18
+text = "Money: 0"
+vertical_alignment = 1
+
 [node name="InventoryButton" type="Button" parent="HeaderPanel/Margin/Header"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(190, 0)
@@ -197,7 +207,7 @@ anchor_top = 1.0
 anchor_right = 0.0
 anchor_bottom = 1.0
 offset_left = 24.0
-offset_top = -124.0
+offset_top = -162.0
 offset_right = 420.0
 offset_bottom = -18.0
 grow_horizontal = 1
@@ -234,6 +244,15 @@ focus_neighbor_bottom = NodePath(".")
 theme_override_colors/font_color = Color(1, 0.92, 0.67, 1)
 theme_override_font_sizes/font_size = 18
 text = "Interact"
+
+[node name="ShopActionButton" type="Button" parent="PrimaryActionPanel/Margin/Content"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 1, 0.93, 1)
+theme_override_font_sizes/font_size = 18
+text = "Shop"
 
 [node name="InventoryPanel" type="PanelContainer" parent="."]
 unique_name_in_owner = true
@@ -288,6 +307,72 @@ layout_mode = 2
 theme_override_constants/separation = 4
 
 [node name="InventoryBackButton" type="Button" parent="InventoryPanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "Back"
+
+[node name="ShopPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -420.0
+offset_top = 98.0
+offset_right = -24.0
+offset_bottom = 350.0
+grow_horizontal = 0
+theme_override_styles/panel = SubResource("Style_action")
+
+[node name="Margin" type="MarginContainer" parent="ShopPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 14
+
+[node name="Content" type="VBoxContainer" parent="ShopPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="ShopPanel/Margin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.99, 0.84, 0.47, 1)
+theme_override_font_sizes/font_size = 22
+text = "Shop"
+
+[node name="ShopBalanceLabel" type="Label" parent="ShopPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.93, 1, 1)
+theme_override_font_sizes/font_size = 17
+text = "Money: 0"
+
+[node name="ShopOfferLabel" type="Label" parent="ShopPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 1, 0.93, 1)
+theme_override_font_sizes/font_size = 17
+text = "Healing Herb · 4 money · Owned 0/10"
+
+[node name="ShopStatusLabel" type="Label" parent="ShopPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.93, 1, 1)
+text = "Buy one item at a time."
+autowrap_mode = 2
+
+[node name="ShopBuyButton" type="Button" parent="ShopPanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.92, 0.67, 1)
+theme_override_font_sizes/font_size = 18
+text = "Buy Healing Herb"
+
+[node name="ShopBackButton" type="Button" parent="ShopPanel/Margin/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
