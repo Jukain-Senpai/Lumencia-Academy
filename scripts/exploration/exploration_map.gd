@@ -49,6 +49,12 @@ const REUSABLE_TEAL := Color(0.48, 0.92, 0.84, 1.0)
 @onready var hub_row: HBoxContainer = %HubRow
 @onready var camp_rest_button: Button = %CampRestButton
 @onready var wait_button: Button = %WaitButton
+@onready var warning_preference_panel: PanelContainer = %WarningPreferencePanel
+@onready var warning_preference_button: CheckButton = %WarningPreferenceButton
+@onready var warning_overlay: ColorRect = %WarningOverlay
+@onready var warning_summary_label: Label = %WarningSummaryLabel
+@onready var warning_go_back_button: Button = %WarningGoBackButton
+@onready var warning_continue_button: Button = %WarningContinueButton
 @onready var diagnostic_panel: PanelContainer = %DiagnosticPanel
 @onready var diagnostic_label: Label = %DiagnosticLabel
 
@@ -67,6 +73,11 @@ var hub_rendered_node_id := ""
 var hub_activation_in_progress := false
 var hub_feedback := ""
 var hub_feedback_node_id := ""
+var warning_dialog_open := false
+var progression_in_progress := false
+var progression_expected_context_id := ""
+var progression_expected_node_id := ""
+var warning_underlay_buttons: Dictionary = {}
 
 
 func _ready() -> void:
@@ -80,11 +91,16 @@ func _ready() -> void:
 	shop_back_button.pressed.connect(_close_shop)
 	camp_rest_button.pressed.connect(_use_camp_rest)
 	wait_button.pressed.connect(_wait_at_hub)
+	warning_preference_button.toggled.connect(_on_warning_preference_toggled)
+	warning_go_back_button.pressed.connect(_on_warning_go_back)
+	warning_continue_button.pressed.connect(_on_warning_continue)
 	resized.connect(_on_resized)
 	call_deferred("refresh_map")
 
 
 func refresh_map() -> bool:
+	if warning_dialog_open:
+		return true
 	if exploration_state == null:
 		return _show_diagnostic("Exploration state is unavailable.")
 	if map_texture.texture == null:
@@ -110,6 +126,8 @@ func refresh_map() -> bool:
 	_refresh_primary_action(current_definition)
 	_refresh_hub_action(current_definition)
 	_refresh_inventory_ui()
+	warning_preference_panel.visible = exploration_state.has_final_progression_node()
+	warning_preference_button.set_pressed_no_signal(GameState.is_missable_content_warning_enabled())
 	marker_layer.visible = true
 	diagnostic_panel.visible = false
 	return true
@@ -125,6 +143,8 @@ func _on_resized() -> void:
 
 
 func _on_marker_pressed(node_id: String) -> void:
+	if warning_dialog_open or progression_in_progress:
+		return
 	if not exploration_state.has_active_context():
 		refresh_map()
 		return
@@ -142,12 +162,14 @@ func _on_marker_pressed(node_id: String) -> void:
 
 
 func interact_with_current_node() -> bool:
-	if interaction_in_progress or not exploration_state.has_active_context():
+	if interaction_in_progress or warning_dialog_open or progression_in_progress or not exploration_state.has_active_context():
 		return false
 	var node_id: String = exploration_state.current_node_id
+	var node_definition: Dictionary = exploration_state.get_node_definition(node_id)
+	if node_definition.has("final_progression"):
+		return request_story_advance()
 	if exploration_state.has_leftover_reward(node_id):
 		return _collect_leftover_reward(node_id)
-	var node_definition: Dictionary = exploration_state.get_node_definition(node_id)
 	var validation_error := _get_primary_content_validation_error(node_definition)
 	if not validation_error.is_empty():
 		return _show_interaction_error(validation_error)
@@ -166,6 +188,107 @@ func interact_with_current_node() -> bool:
 		"resource":
 			return _resolve_resource_content(primary_content)
 	return _show_interaction_error("Unsupported primary content type '%s'." % content_type)
+
+
+func request_story_advance() -> bool:
+	if warning_dialog_open or progression_in_progress or not exploration_state.has_active_context():
+		return false
+	progression_expected_context_id = exploration_state.active_context_id
+	progression_expected_node_id = exploration_state.current_node_id
+	if not exploration_state.can_advance_from_current_node(
+		progression_expected_context_id, progression_expected_node_id
+	):
+		return false
+	var summary: Dictionary = exploration_state.get_missable_content_summary()
+	if GameState.is_missable_content_warning_enabled() and summary["total"] > 0:
+		_open_warning_dialog(summary)
+		return true
+	return _commit_story_advance()
+
+
+func _open_warning_dialog(summary: Dictionary) -> void:
+	var details: Array[String] = []
+	if summary["optional_primary_count"] > 0:
+		details.append("Optional events: %d" % summary["optional_primary_count"])
+	if summary["leftover_reward_count"] > 0:
+		details.append("Uncollected rewards: %d" % summary["leftover_reward_count"])
+	if summary["optional_roadblock_count"] > 0:
+		details.append("Optional roadblocks: %d" % summary["optional_roadblock_count"])
+	warning_summary_label.text = "  •  ".join(details)
+	warning_dialog_open = true
+	warning_overlay.show()
+	warning_underlay_buttons.clear()
+	for raw_node: Node in find_children("*", "BaseButton", true, false):
+		var button := raw_node as BaseButton
+		if button == null or warning_overlay.is_ancestor_of(button):
+			continue
+		warning_underlay_buttons[button] = {
+			"disabled": button.disabled,
+			"focus_mode": button.focus_mode,
+		}
+		button.disabled = true
+		button.focus_mode = Control.FOCUS_NONE
+	warning_go_back_button.disabled = false
+	warning_continue_button.disabled = false
+	warning_go_back_button.grab_focus()
+
+
+func _on_warning_go_back() -> void:
+	if not warning_dialog_open or progression_in_progress:
+		return
+	_close_warning_dialog()
+	primary_action_button.grab_focus()
+
+
+func _close_warning_dialog() -> void:
+	warning_dialog_open = false
+	warning_overlay.hide()
+	for raw_button: Variant in warning_underlay_buttons:
+		var button := raw_button as BaseButton
+		if not is_instance_valid(button):
+			continue
+		button.disabled = warning_underlay_buttons[raw_button]["disabled"]
+		button.focus_mode = warning_underlay_buttons[raw_button]["focus_mode"]
+	warning_underlay_buttons.clear()
+	refresh_map()
+
+
+func _on_warning_continue() -> void:
+	if not warning_dialog_open or progression_in_progress:
+		return
+	_commit_story_advance()
+
+
+func _commit_story_advance() -> bool:
+	if progression_in_progress:
+		return false
+	progression_in_progress = true
+	warning_continue_button.disabled = true
+	warning_go_back_button.disabled = true
+	var result: Dictionary = GameState.advance_story_from_exploration(
+		progression_expected_context_id, progression_expected_node_id
+	)
+	if result["success"]:
+		return true
+	progression_in_progress = false
+	warning_continue_button.disabled = false
+	warning_go_back_button.disabled = false
+	if warning_dialog_open:
+		_close_warning_dialog()
+	last_interaction_feedback = result["message"]
+	feedback_node_id = exploration_state.current_node_id
+	refresh_map()
+	return false
+
+
+func _on_warning_preference_toggled(enabled: bool) -> void:
+	GameState.set_missable_content_warning_enabled(enabled)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if warning_dialog_open and event.is_action_pressed("ui_cancel"):
+		get_viewport().set_input_as_handled()
+		_on_warning_go_back()
 
 
 func _launch_vn_content(content_id: String) -> bool:
@@ -274,6 +397,13 @@ func _collect_leftover_reward(node_id: String) -> bool:
 
 func _refresh_primary_action(node_definition: Dictionary) -> void:
 	var node_id: String = node_definition.get("id", "")
+	if node_definition.has("final_progression"):
+		primary_action_panel.show()
+		primary_action_status.text = "Select Advance Story to leave this exploration phase."
+		primary_action_button.text = "Advance Story"
+		primary_action_button.visible = true
+		primary_action_button.disabled = progression_in_progress or exploration_state.is_node_roadblocked(node_id)
+		return
 	var validation_error := _get_primary_content_validation_error(node_definition)
 	if not validation_error.is_empty():
 		_show_interaction_error(validation_error)
@@ -325,13 +455,16 @@ func _get_primary_content_validation_error(node_definition: Dictionary) -> Strin
 	if not ["vn_event", "battle", "resource"].has(primary_content["type"]):
 		return "Unsupported primary content type '%s'." % primary_content["type"]
 	var has_action_cost := primary_content.has("action_cost")
+	var has_optional := primary_content.has("optional")
 	if has_action_cost and (typeof(primary_content["action_cost"]) != TYPE_INT or not [0, 1].has(primary_content["action_cost"])):
 		return "Current node primary content has an invalid action cost."
+	if has_optional and typeof(primary_content["optional"]) != TYPE_BOOL:
+		return "Current node primary content has an invalid optional flag."
 	if primary_content["type"] != "resource":
-		if primary_content.keys().size() != 2 + int(has_action_cost):
+		if primary_content.keys().size() != 2 + int(has_action_cost) + int(has_optional):
 			return "Current node primary content has unexpected fields."
 		return ""
-	if primary_content.keys().size() != 3 + int(has_action_cost):
+	if primary_content.keys().size() != 3 + int(has_action_cost) + int(has_optional):
 		return "Resource primary content requires one item reward."
 	var raw_reward: Variant = primary_content.get("reward")
 	if typeof(raw_reward) != TYPE_DICTIONARY:
@@ -675,6 +808,7 @@ func _create_marker_button(node_id: String, display_name: String) -> Button:
 	_add_indicator(button, "CompletedBadge", "✓", HORIZONTAL_ALIGNMENT_LEFT, Color(0.72, 0.90, 0.72, 1.0))
 	_add_indicator(button, "RoadblockBadge", "!", HORIZONTAL_ALIGNMENT_RIGHT, ROADBLOCK_RED)
 	_add_indicator(button, "ReusableBadge", "↻", HORIZONTAL_ALIGNMENT_RIGHT, REUSABLE_TEAL, true)
+	_add_indicator(button, "FinalBadge", "STORY EXIT", HORIZONTAL_ALIGNMENT_CENTER, PALE_GOLD)
 	var leftover_badge := _add_indicator(button, "LeftoverBadge", "ITEM", HORIZONTAL_ALIGNMENT_CENTER, GOLD)
 	leftover_badge.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	leftover_badge.offset_left = 20.0
@@ -724,6 +858,7 @@ func _update_marker_visuals(node_id: String, node_definition: Dictionary) -> voi
 	var is_roadblocked: bool = exploration_state.is_node_roadblocked(node_id)
 	var is_reusable: bool = exploration_state.is_node_reusable(node_id)
 	var has_leftover: bool = exploration_state.has_leftover_reward(node_id)
+	var is_final: bool = node_definition.has("final_progression")
 	var is_reachable: bool = not is_current and exploration_state.can_travel_to(node_id)
 
 	button.text = node_definition["display_name"]
@@ -737,19 +872,25 @@ func _update_marker_visuals(node_id: String, node_definition: Dictionary) -> voi
 	button.set_meta("is_reusable", is_reusable)
 	button.set_meta("has_leftover", has_leftover)
 	button.set_meta("is_reachable", is_reachable)
+	button.set_meta("is_final_progression", is_final)
 
 	button.get_node("CompletedBadge").visible = is_completed
 	button.get_node("CurrentTag").visible = is_current
 	button.get_node("RoadblockBadge").visible = is_roadblocked
 	button.get_node("ReusableBadge").visible = is_reusable
+	button.get_node("FinalBadge").visible = is_final and not is_current
 	var leftover_badge: Label = button.get_node("LeftoverBadge")
 	leftover_badge.visible = has_leftover
 	if has_leftover:
 		leftover_badge.text = "ITEM ×%d" % exploration_state.get_leftover_reward(node_id)["quantity"]
 
 	var background := MUTED if is_completed else (VIOLET if is_reachable or is_current else UNAVAILABLE)
+	if is_final and (is_reachable or is_current):
+		background = Color(0.24, 0.15, 0.18, 0.97)
 	var border := GOLD if is_current else (Color(0.76, 0.62, 0.32, 0.95) if is_reachable else Color(0.42, 0.43, 0.46, 0.85))
-	var border_width := 4 if is_current else 2
+	if is_final:
+		border = PALE_GOLD
+	var border_width := 4 if is_current or is_final else 2
 	var normal_style := _make_marker_style(background, border, border_width)
 	button.add_theme_stylebox_override("normal", normal_style)
 	button.add_theme_stylebox_override("disabled", normal_style)
@@ -777,6 +918,8 @@ func _update_marker_visuals(node_id: String, node_definition: Dictionary) -> voi
 		tooltip_parts.append("Reusable location")
 	if has_leftover:
 		tooltip_parts.append("Uncollected item remains")
+	if is_final:
+		tooltip_parts.append("Story exit — use Advance Story here")
 	button.tooltip_text = " • ".join(tooltip_parts)
 
 
@@ -845,6 +988,7 @@ func _get_presentation_validation_error(context_definition: Dictionary, node_def
 
 func _show_diagnostic(message: String) -> bool:
 	marker_layer.visible = false
+	warning_preference_panel.hide()
 	shop_panel.hide()
 	shop_action_button.hide()
 	hub_row.hide()

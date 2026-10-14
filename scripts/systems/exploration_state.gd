@@ -6,6 +6,7 @@ const TIME_SLOTS := "TIME_SLOTS"
 const MULTI_DAY := "MULTI_DAY"
 const DAYPARTS := ["Morning", "Afternoon", "Night"]
 const MAX_TIME_COUNTER := 9223372036854775807
+const PROTOTYPE_FINAL_DESTINATION := "prototype_story_result"
 
 var active_context_id := ""
 var current_node_id := ""
@@ -24,6 +25,7 @@ var hub_action_uses: Dictionary = {}
 
 var _context_definitions: Dictionary = {}
 var _active_nodes: Dictionary = {}
+var _closed_context_ids: Dictionary = {}
 
 
 func define_context(context_definition: Dictionary) -> bool:
@@ -35,7 +37,7 @@ func define_context(context_definition: Dictionary) -> bool:
 
 
 func activate_context(context_id: String) -> bool:
-	if not _context_definitions.has(context_id):
+	if not _context_definitions.has(context_id) or is_context_closed(context_id):
 		return false
 
 	var context: Dictionary = _context_definitions[context_id]
@@ -79,6 +81,79 @@ func clear_runtime() -> void:
 	time_feedback = ""
 	day_transition_pending = false
 	_active_nodes.clear()
+
+
+func reset_session() -> void:
+	clear_runtime()
+	_closed_context_ids.clear()
+
+
+func is_context_closed(context_id: String) -> bool:
+	return _closed_context_ids.has(context_id)
+
+
+func has_final_progression_node() -> bool:
+	if not has_active_context():
+		return false
+	for node_id: String in _active_nodes:
+		if _active_nodes[node_id].has("final_progression"):
+			return true
+	return false
+
+
+func can_advance_from_current_node(expected_context_id: String, expected_node_id: String) -> bool:
+	if (
+		expected_context_id.is_empty()
+		or expected_node_id.is_empty()
+		or active_context_id != expected_context_id
+		or current_node_id != expected_node_id
+		or is_context_closed(expected_context_id)
+		or not has_node(expected_node_id)
+		or not is_node_revealed(expected_node_id)
+		or is_node_roadblocked(expected_node_id)
+	):
+		return false
+	return _active_nodes[expected_node_id].has("final_progression")
+
+
+func close_active_context(expected_context_id: String, expected_node_id: String) -> bool:
+	if not can_advance_from_current_node(expected_context_id, expected_node_id):
+		return false
+	_closed_context_ids[expected_context_id] = true
+	clear_runtime()
+	return true
+
+
+func get_missable_content_summary() -> Dictionary:
+	var summary := {
+		"optional_primary_count": 0,
+		"leftover_reward_count": 0,
+		"optional_roadblock_count": 0,
+		"total": 0,
+	}
+	if not has_active_context():
+		return summary
+	for node_id: String in _active_nodes:
+		var node_definition: Dictionary = _active_nodes[node_id]
+		if node_definition.has("final_progression"):
+			continue
+		var primary_content: Variant = node_definition.get("primary_content")
+		if (
+			typeof(primary_content) == TYPE_DICTIONARY
+			and primary_content.get("optional", false)
+			and not is_node_completed(node_id)
+		):
+			summary["optional_primary_count"] += 1
+		if has_leftover_reward(node_id):
+			summary["leftover_reward_count"] += 1
+		if node_definition.get("optional_missable_roadblock", false) and is_node_roadblocked(node_id):
+			summary["optional_roadblock_count"] += 1
+	summary["total"] = (
+		summary["optional_primary_count"]
+		+ summary["leftover_reward_count"]
+		+ summary["optional_roadblock_count"]
+	)
+	return summary
 
 
 func has_active_context() -> bool:
@@ -291,6 +366,7 @@ func _is_valid_context_definition(context_definition: Dictionary) -> bool:
 	if node_definitions.is_empty():
 		return false
 	var nodes_by_id: Dictionary = {}
+	var final_node_count := 0
 	for raw_node: Variant in node_definitions:
 		if typeof(raw_node) != TYPE_DICTIONARY:
 			return false
@@ -301,6 +377,10 @@ func _is_valid_context_definition(context_definition: Dictionary) -> bool:
 		if nodes_by_id.has(node_id):
 			return false
 		nodes_by_id[node_id] = node_definition
+		if node_definition.has("final_progression"):
+			final_node_count += 1
+			if final_node_count > 1:
+				return false
 
 	var starting_node: String = context_definition["starting_node"]
 	if not nodes_by_id.has(starting_node):
@@ -339,9 +419,26 @@ func _is_valid_node_shape(node_definition: Dictionary) -> bool:
 			return false
 	if node_definition.has("primary_content"):
 		var primary_content: Variant = node_definition["primary_content"]
-		if typeof(primary_content) == TYPE_DICTIONARY and primary_content.has("action_cost"):
+		if typeof(primary_content) != TYPE_DICTIONARY:
+			return false
+		if primary_content.has("action_cost"):
 			if typeof(primary_content["action_cost"]) != TYPE_INT or not [0, 1].has(primary_content["action_cost"]):
 				return false
+		if primary_content.has("optional") and typeof(primary_content["optional"]) != TYPE_BOOL:
+			return false
+	if node_definition.has("optional_missable_roadblock") and typeof(node_definition["optional_missable_roadblock"]) != TYPE_BOOL:
+		return false
+	if node_definition.has("final_progression"):
+		var final_definition: Variant = node_definition["final_progression"]
+		if (
+			typeof(final_definition) != TYPE_DICTIONARY
+			or final_definition.keys().size() != 1
+			or final_definition.get("destination") != PROTOTYPE_FINAL_DESTINATION
+			or node_definition.has("primary_content")
+			or node_definition.has("hub_actions")
+			or node_definition["reusable"]
+		):
+			return false
 	return true
 
 

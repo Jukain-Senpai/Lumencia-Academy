@@ -15,6 +15,15 @@ func _enter_tree() -> void:
 	GameState.gain_money(PROTOTYPE_STARTING_MONEY)
 	GameState.inventory_state.gain_item(ItemCatalogModel.HEALING_HERB_ID, PROTOTYPE_STARTING_HERBS)
 	GameState.party_runtime_state.set_current_hp("party_1", PROTOTYPE_HIRUKO_HP)
+	var context := build_context()
+	context_ready = GameState.exploration_state.define_context(context)
+	if context_ready:
+		context_ready = GameState.exploration_state.activate_context(TIMED_CONTEXT_ID)
+	if not context_ready:
+		push_error("M7.6 timed Exploration prototype context is invalid.")
+
+
+static func build_context() -> Dictionary:
 	var base_script: Script = load(BASE_PROTOTYPE_SCRIPT)
 	var context: Dictionary = base_script.get_script_constant_map()["PROTOTYPE_CONTEXT"].duplicate(true)
 	context["id"] = TIMED_CONTEXT_ID
@@ -33,8 +42,4 @@ func _enter_tree() -> void:
 				"display_name": "Wait / Advance Time",
 			})
 			break
-	context_ready = GameState.exploration_state.define_context(context)
-	if context_ready:
-		context_ready = GameState.exploration_state.activate_context(TIMED_CONTEXT_ID)
-	if not context_ready:
-		push_error("M7.6 timed Exploration prototype context is invalid.")
+	return context

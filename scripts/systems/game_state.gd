@@ -7,6 +7,11 @@ const PartyRuntimeStateModel := preload("res://scripts/systems/party_runtime_sta
 const ItemCatalogModel := preload("res://scripts/systems/item_catalog.gd")
 const EXPLORATION_CONTENT_TYPES := ["vn_event", "battle", "resource"]
 const MAX_MONEY := 9223372036854775807
+const PROGRESSION_RESULT_SCENE_PATH := "res://scenes/exploration/m7_7_progression_result.tscn"
+const PROGRESSION_SOURCE_SCENE_PATHS := [
+	"res://scenes/exploration/m7_7_progression_prototype.tscn",
+	"res://scenes/exploration/exploration_map.tscn",
+]
 
 var flags: Dictionary = {}
 var bonds: Dictionary = {}
@@ -19,6 +24,7 @@ var exploration_state := ExplorationStateModel.new()
 var inventory_state := InventoryStateModel.new()
 var party_runtime_state := PartyRuntimeStateModel.new()
 var _money := 0
+var _missable_content_warning_enabled := true
 
 
 func set_flag(flag_name: String, value: bool) -> void:
@@ -50,10 +56,78 @@ func reset_state() -> void:
 	pending_battle_result.clear()
 	pending_vn_sequence = ""
 	pending_exploration_content.clear()
-	exploration_state.clear_runtime()
+	exploration_state.reset_session()
 	inventory_state.clear()
 	party_runtime_state.reset()
 	_money = 0
+	_missable_content_warning_enabled = true
+
+
+func is_missable_content_warning_enabled() -> bool:
+	return _missable_content_warning_enabled
+
+
+func set_missable_content_warning_enabled(enabled: Variant) -> bool:
+	if typeof(enabled) != TYPE_BOOL:
+		return false
+	_missable_content_warning_enabled = enabled
+	return true
+
+
+func advance_story_from_exploration(expected_context_id: String, expected_node_id: String) -> Dictionary:
+	var result := {"success": false, "message": "Story progression is unavailable."}
+	if not exploration_state.can_advance_from_current_node(expected_context_id, expected_node_id):
+		return result
+	if (
+		not pending_battle_context.is_empty()
+		or not pending_battle_result.is_empty()
+		or not pending_vn_sequence.is_empty()
+		or not pending_exploration_content.is_empty()
+	):
+		result["message"] = "Another story interaction is still pending."
+		return result
+	var final_definition: Dictionary = exploration_state.get_node_definition(expected_node_id).get("final_progression", {})
+	if final_definition.get("destination") != ExplorationStateModel.PROTOTYPE_FINAL_DESTINATION:
+		result["message"] = "Story destination is unsupported."
+		return result
+	if not ResourceLoader.exists(PROGRESSION_RESULT_SCENE_PATH):
+		result["message"] = "Story destination scene is missing."
+		return result
+	var destination_resource: Resource = load(PROGRESSION_RESULT_SCENE_PATH)
+	if not destination_resource is PackedScene or not destination_resource.can_instantiate():
+		result["message"] = "Story destination scene cannot be instantiated."
+		return result
+	var scene_tree: SceneTree = get_tree()
+	var source_scene: Node = scene_tree.current_scene
+	if (
+		source_scene == null
+		or not source_scene.is_inside_tree()
+		or not PROGRESSION_SOURCE_SCENE_PATHS.has(source_scene.scene_file_path)
+	):
+		result["message"] = "Current exploration scene is unavailable."
+		return result
+	var destination_scene: Node = destination_resource.instantiate()
+	if destination_scene == null:
+		result["message"] = "Story destination could not be prepared."
+		return result
+	if destination_scene is CanvasItem:
+		destination_scene.visible = false
+	scene_tree.root.add_child(destination_scene)
+	if not destination_scene.is_inside_tree():
+		destination_scene.free()
+		result["message"] = "Story destination could not enter the scene tree."
+		return result
+	if not exploration_state.close_active_context(expected_context_id, expected_node_id):
+		destination_scene.queue_free()
+		result["message"] = "Exploration context could not close."
+		return result
+	scene_tree.current_scene = destination_scene
+	if destination_scene is CanvasItem:
+		destination_scene.visible = true
+	source_scene.queue_free()
+	result["success"] = true
+	result["message"] = "Exploration complete."
+	return result
 
 
 func get_money() -> int:
